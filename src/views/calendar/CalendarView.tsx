@@ -125,13 +125,13 @@ const VIEWS = {
 } satisfies NonNullable<CalendarOptions['views']>
 
 const VIEW_OPTIONS: { value: HashView; label: string; title?: string }[] = [
+  // §30: 'agenda' is a MODE (header switcher), not a schedule day-length.
   { value: 'day', label: 'Day', title: 'Day (D)' },
   { value: '3d', label: '3d', title: '3 days' },
   { value: '5d', label: '5d', title: '5 days' },
   { value: 'week', label: 'Week', title: 'Week (W)' },
   { value: '2weeks', label: '2 Weeks', title: '2 Weeks (Shift+W)' },
   { value: 'month', label: 'Month', title: 'Month (M)' },
-  { value: 'agenda', label: 'Agenda', title: 'Agenda (A)' },
 ]
 
 /** Mobile view-sheet rows: the same HashView values fed to switchView() as the

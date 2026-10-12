@@ -597,7 +597,7 @@ export function Sidebar(props: { open: boolean; onClose: () => void }) {
   const anySyncing = [...syncState.value.values()].some((s) => s.state === 'syncing');
 
   const onNew = (): void => {
-    props.onClose();
+    if (!isDesktop) props.onClose();
     const start = new Date();
     start.setSeconds(0, 0);
     const bump = 30 - (start.getMinutes() % 30) || 30; // strictly next half-hour
@@ -804,28 +804,29 @@ export function Sidebar(props: { open: boolean; onClose: () => void }) {
         onClick={props.onClose}
         aria-hidden="true"
       />
-      {/* Desktop (≥768px): an inline column that X collapses to zero width —
-          overflow-hidden + the fixed min-w inner wrapper clip the content
-          during the width transition. Mobile: off-canvas drawer, unchanged.
+      {/* Desktop (≥768px): an inline column, ALWAYS visible (drawer state is
+          mobile-only — a desktop close must never w-0 the column or it is
+          unrecoverable). overflow-hidden + the fixed min-w inner wrapper clip
+          the content during the width transition. Mobile: off-canvas drawer.
           §nav-revamp: the column hugs the window edge prefs.sidebarSide —
           flex `order` puts it after the main column by default (right). */}
       <aside
         ref={asideRef}
         aria-label="Calendar sidebar"
-        class={`app-sidebar fixed inset-y-0 z-40 flex w-(--drawer-w) shrink-0 flex-col overflow-hidden bg-surface transition-[transform,width] duration-200 ease-out md:static md:translate-x-0 ${
+        class={`app-sidebar fixed inset-y-0 z-40 flex w-(--drawer-w) shrink-0 flex-col overflow-hidden bg-surface transition-[transform,width] duration-200 ease-out md:static md:w-(--sidebar-w) md:translate-x-0 ${
           side === 'left' ? 'left-0 border-r border-border' : 'right-0 border-l border-border'
         } ${
           props.open
-            ? 'translate-x-0 shadow-[var(--shadow-2)] md:w-(--sidebar-w)'
+            ? 'translate-x-0 shadow-[var(--shadow-2)]'
             : side === 'left'
-              ? '-translate-x-full md:w-0 md:border-r-0'
-              : 'translate-x-full md:w-0 md:border-l-0'
+              ? '-translate-x-full'
+              : 'translate-x-full'
         }`}
         style={{ order: side === 'left' ? 1 : 3 }}
       >
         <div class="app-sidebar-body flex min-h-0 min-w-(--sidebar-w) flex-1 flex-col">
           {/* Search (§nav-revamp): every mode; '/' / ⌘K focus it. */}
-          <SidebarSearch onNavigate={props.onClose} />
+          <SidebarSearch onNavigate={() => { if (!isDesktop) props.onClose() }} />
           {mode === 'schedule' && (
             <div class="flex flex-col gap-1.5 px-4 pb-2">
               <button type="button" class="btn btn-primary w-full" title="New event (N)" onClick={onNew}>
