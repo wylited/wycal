@@ -6,6 +6,16 @@ export type Density = 'compact' | 'cozy';
 /** Sidebar chrome scale (design.md §4): stamped as <html data-sidebar-size>;
  *  app.css scales every sidebar section off that attribute. */
 export type SidebarSize = 'compact' | 'default' | 'large';
+/** Which edge of the window the sidebar column hugs (§nav-revamp). */
+export type SidebarSide = 'left' | 'right';
+/** Agenda todo STATUS filter chips (§nav-revamp agenda mode). */
+export type AgendaStatusFilter = 'all' | 'todo' | 'doing' | 'done';
+/** Agenda todo PRIORITY filter chips (§nav-revamp agenda mode). */
+export type AgendaPriorityFilter = 'all' | 'A' | 'B' | 'C';
+/** Schedule sub-view names the mode switcher remembers (prefs.lastScheduleView). */
+const SCHEDULE_VIEWS: Record<string, true> = {
+  day: true, '3d': true, '5d': true, week: true, '2weeks': true, month: true,
+};
 export type FirstDay = 0 | 1;
 
 /** Shape of the persisted preferences object (CONTRACTS §4, §13). */
@@ -32,6 +42,19 @@ interface Prefs {
   agendaGroup?: AgendaGroup;
   /** Show todo rows in the agenda view (§agenda chip); absent → true. */
   agendaTodos?: boolean;
+  /** Show event rows in the agenda view (§nav-revamp); absent → true. */
+  agendaEvents?: boolean;
+  /** Agenda todo status filter (§nav-revamp); absent → 'all'. */
+  agendaStatusFilter?: AgendaStatusFilter;
+  /** Agenda todo priority filter (§nav-revamp); absent → 'all'. */
+  agendaPriorityFilter?: AgendaPriorityFilter;
+  /** Last non-agenda schedule sub-view; the mode switcher restores it. Absent → 'week'. */
+  lastScheduleView?: string;
+  /** Sidebar column edge (§nav-revamp); absent → 'right'. */
+  sidebarSide: SidebarSide;
+  /** Draggable section heights in px, by sidebar section id (§nav-revamp);
+   *  absent key → section sizes to content (flex auto). */
+  sidebarSectionHeights?: Record<string, number>;
 }
 
 const PREFS_STORAGE_KEY = 'wycal.prefs';
@@ -50,7 +73,23 @@ const DEFAULT_PREFS: Readonly<Prefs> = {
   agendaRange: 14,
   agendaGroup: 'day',
   agendaTodos: true,
+  agendaEvents: true,
+  agendaStatusFilter: 'all',
+  agendaPriorityFilter: 'all',
+  lastScheduleView: 'week',
+  sidebarSide: 'right',
+  sidebarSectionHeights: {},
 };
+
+/** Keeps only finite-number entries of a stored heights map (localStorage
+ *  boundary — the shape is untrusted). */
+function sanitizeSectionHeights(raw: object): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(raw)) {
+    if (typeof v === 'number' && Number.isFinite(v)) out[k] = v;
+  }
+  return out;
+}
 
 function loadPrefs(): Prefs {
   if (typeof localStorage === 'undefined') return { ...DEFAULT_PREFS };
@@ -102,6 +141,26 @@ function loadPrefs(): Prefs {
           ? s.agendaGroup
           : DEFAULT_PREFS.agendaGroup,
       agendaTodos: typeof s.agendaTodos === 'boolean' ? s.agendaTodos : DEFAULT_PREFS.agendaTodos,
+      agendaEvents: typeof s.agendaEvents === 'boolean' ? s.agendaEvents : DEFAULT_PREFS.agendaEvents,
+      agendaStatusFilter:
+        s.agendaStatusFilter === 'todo' || s.agendaStatusFilter === 'doing' || s.agendaStatusFilter === 'done'
+          ? s.agendaStatusFilter
+          : DEFAULT_PREFS.agendaStatusFilter,
+      agendaPriorityFilter:
+        s.agendaPriorityFilter === 'A' || s.agendaPriorityFilter === 'B' || s.agendaPriorityFilter === 'C'
+          ? s.agendaPriorityFilter
+          : DEFAULT_PREFS.agendaPriorityFilter,
+      lastScheduleView:
+        typeof s.lastScheduleView === 'string' && SCHEDULE_VIEWS[s.lastScheduleView]
+          ? s.lastScheduleView
+          : DEFAULT_PREFS.lastScheduleView,
+      sidebarSide: s.sidebarSide === 'left' ? 'left' : DEFAULT_PREFS.sidebarSide,
+      sidebarSectionHeights:
+        typeof s.sidebarSectionHeights === 'object' &&
+        s.sidebarSectionHeights !== null &&
+        !Array.isArray(s.sidebarSectionHeights)
+          ? sanitizeSectionHeights(s.sidebarSectionHeights)
+          : DEFAULT_PREFS.sidebarSectionHeights,
     };
   } catch (err) {
     console.warn('wycal: could not read prefs, using defaults', err);

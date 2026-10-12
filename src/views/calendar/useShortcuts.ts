@@ -1,17 +1,17 @@
 /**
  * Calendar-scope keyboard shortcuts (CONTRACTS §6/§16; active while the #/ route
- * is mounted): d/w/W/m/a view switches, t/. today, T → #/tasks, ←/→/, period
- * navigation (funneled through `navigate` for the §22 view-motion classes),
- * +/- N-days step, E event details of the selected event, ⌫/Delete delete flow
- * on the selected event, Z most-recent toast action. Global keys (n/N/c/C/s/x/
- * q/Q/?/1–9, `\` scratch notes; Q opens the global quick-add dialog while q
- * closes the topmost dialog) live in the app.tsx handler; `/` focuses the
- * header search from there too. Suppressed in inputs and while a dialog or the
- * recurring-edit scope modal is up.
+ * is mounted): d/w/W/m/a view switches, t/. today, T → Agenda mode (#/?view=
+ * agenda, §nav-revamp), ←/→/, period navigation (funneled through `navigate`
+ * for the §22 view-motion classes), +/- N-days step, E event details of the
+ * selected event, ⌫/Delete delete flow on the selected event, Z most-recent
+ * toast action. Global keys (n/N/c/C/s/x/q/Q/?/1–9, `\` scratch notes; Q opens
+ * the global quick-add dialog while q closes the topmost dialog) live in the
+ * app.tsx handler; `/` and ⌘K focus the sidebar search from there too.
+ * Suppressed in inputs and while a dialog or the recurring-edit scope modal
+ * is up.
  */
 import { useEffect } from 'preact/hooks'
 import type { CalendarApi } from '@fullcalendar/core'
-import { ROUTES } from '../../routes'
 import { isDialogOpen, isEditableTarget } from '../../stores/ui'
 import { runToastAction, toasts } from '../../stores/toasts'
 
@@ -47,10 +47,11 @@ export function useShortcuts(options: {
         case 'W': switchView('2weeks'); break
         case 'm': switchView('month'); break
         case 'a': switchView('agenda'); break
-        // §16 binds Today to `.`; `t` stays as an alias since `T`/tasks
+        // §16 binds Today to `.`; `t` stays as an alias since `T`/agenda
         // is a distinct key.
         case 't': case '.': navigate('today'); break
-        case 'T': window.location.hash = `#${ROUTES.tasks}`; break
+        // §nav-revamp: T goes to the Agenda mode (the Tasks route is gone).
+        case 'T': window.location.hash = '#/?view=agenda'; break
         case 'ArrowLeft': case ',': navigate('prev'); break
         case 'ArrowRight': navigate('next'); break
         case '+': stepNDays(1); break

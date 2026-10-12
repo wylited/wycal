@@ -27,8 +27,6 @@ import { CalendarView } from './views/calendar/CalendarView';
 import { ContactsView } from './views/contacts/ContactsView';
 import { ScratchNotes } from './views/notes/ScratchNotes';
 import { SettingsView } from './views/settings/SettingsView';
-import { TasksView } from './views/tasks/TasksView';
-import SearchMatchView from './views/search/SearchMatchView';
 import SavedComposite from './views/search/SavedComposite';
 import { EventEditor } from './views/event-editor/EventEditor';
 import { QuickAddDialog, openQuickAdd } from './views/quickadd/QuickAddDialog';
@@ -111,6 +109,18 @@ export function App() {
     return prefs.subscribe(applyTheme);
   }, []);
 
+  // §nav-revamp: the Tasks route is gone (merged into Agenda) — any stale
+  // #/tasks link lands on the agenda mode instead.
+  useEffect(() => {
+    const redirect = (): void => {
+      const { path } = parseRoutePath(window.location.hash.replace(/^#/, ''));
+      if (path === ROUTES.tasks) window.location.hash = `#/?view=agenda`;
+    };
+    redirect();
+    window.addEventListener('hashchange', redirect);
+    return () => window.removeEventListener('hashchange', redirect);
+  }, []);
+
   // Density sync (CONTRACTS §4): stamp 'compact' | 'cozy' on <html>; app.css
   // keeps cozy as the default look and tightens ~10% under [data-density].
   useEffect(() => {
@@ -128,14 +138,22 @@ export function App() {
     startSync();
   }, []);
 
-  // Global keyboard shortcuts (CONTRACTS §16): n new event · Shift+N new task
-  // · c/C new contact/calendar · / search focus · s settings · x sidebar
-  // · \ scratch notes · ? help · 1–9 toggle calendar n · q close topmost dialog
-  // · Q quick-add dialog. Route-aware
+  // Global keyboard shortcuts (CONTRACTS §16, §nav-revamp): n new event
+  // · Shift+N quick-add a todo directly · c/C new contact/calendar
+  // · / or ⌘K focus the sidebar search · s settings · x sidebar · \ scratch
+  // notes · ? help · 1–9 toggle calendar n · q close topmost dialog · Q
+  // quick-add dialog. Route-aware
   // (works on every route), input-gated, and dialog-gated (`q` still fires so
   // it can close the dialog). Calendar-scope keys live in useShortcuts.
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
+      // ⌘K / Ctrl+K focuses the sidebar search from anywhere (even inside
+      // inputs — it is a chord, not a typed character).
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        if (!isDialogOpen()) pingRouteView('wycal:search');
+        e.preventDefault();
+        return;
+      }
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (isEditableTarget(e.target)) return;
       const dialogUp = isDialogOpen();
@@ -144,12 +162,9 @@ export function App() {
           if (!dialogUp) requestNewEvent();
           break;
         case 'N':
-          if (!dialogUp) {
-            if (window.location.hash !== `#${ROUTES.tasks}`) {
-              window.location.hash = `#${ROUTES.tasks}`;
-            }
-            pingRouteView('wycal:quickadd');
-          }
+          // §nav-revamp: Shift+N opens quick-add in todo mode directly (the
+          // Tasks route is gone).
+          if (!dialogUp) openQuickAdd('todo');
           break;
         case 'c':
           if (!dialogUp) {
@@ -163,6 +178,8 @@ export function App() {
           if (!dialogUp) pingRouteView('wycal:newcalendar');
           break;
         case '/':
+          // §nav-revamp: focuses the sidebar search box (SidebarSearch listens
+          // for this ping; the header box and the #/search overlay are gone).
           if (!dialogUp) pingRouteView('wycal:search');
           break;
         case 's':
@@ -219,21 +236,25 @@ export function App() {
 
   return (
     <div class="flex h-dvh overflow-hidden bg-bg text-fg">
-      <Sidebar open={drawerOpen} onClose={() => (sidebarOpen.value = false)} />
-      <div class="flex min-w-0 flex-1 flex-col">
+      {/* §nav-revamp: flex `order` hugs the sidebar to prefs.sidebarSide
+          (default 'right' = main column first, sidebar last). The aside sets
+          the matching order itself (Sidebar.tsx). */}
+      <div
+        class="flex min-w-0 flex-1 flex-col"
+        style={{ order: prefs.value.sidebarSide === 'left' ? 2 : 1 }}
+      >
         <Header onMenu={() => (sidebarOpen.value = true)} />
         <main class="min-h-0 max-md:pb-[env(safe-area-inset-bottom)] flex-1 overflow-hidden">
           <Router history={hashHistory}>
             <Route path={ROUTES.calendar} component={CalendarRoute} />
             <Route path={ROUTES.contacts} component={ContactsView} />
             <Route path={ROUTES.settings} component={SettingsView} />
-            <Route path={ROUTES.tasks} component={TasksView} />
-            <Route path={ROUTES.search} component={SearchMatchView} />
             <Route path={ROUTES.savedView} component={SavedComposite} />
             <Route default component={CalendarRoute} />
           </Router>
         </main>
       </div>
+      <Sidebar open={drawerOpen} onClose={() => (sidebarOpen.value = false)} />
       <ToastHost />
       <ScratchNotes />
       <EventEditor />

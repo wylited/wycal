@@ -29,6 +29,25 @@ export interface ParsedContactObject {
 export const contacts = signal<Map<string, ContactRecord>>(new Map())
 
 /**
+ * Sidebar tag filter (ContactsSidebar ↔ ContactsView): tags a contact must
+ * ALL carry (AND) to appear in the list. Empty list = no tag filtering.
+ */
+export const contactTagFilter = signal<string[]>([])
+
+/**
+ * One-shot "open this contact" request from outside the main view (sidebar
+ * birthdays, note @mentions). ContactsView consumes it: opens the detail
+ * popover anchored to the list body, then clears the signal. `at` lets a
+ * repeated click on the same contact re-trigger the effect.
+ */
+export const openContactRequest = signal<{ href: string; at: number } | null>(null)
+
+/** Raise an open-contact request (callers don't touch the signal shape). */
+export function requestOpenContact(href: string): void {
+  openContactRequest.value = { href, at: Date.now() }
+}
+
+/**
  * Bumped by `applyContactsSync` whenever a sync could change contact content
  * (live binding — importers read the current value). The engine's birthday
  * materializer uses it to skip no-op runs.

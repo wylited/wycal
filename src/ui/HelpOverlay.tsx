@@ -15,11 +15,11 @@ type Shortcut = [action: string, keys: string[]];
 
 const GLOBAL: Shortcut[] = [
   ['New event', ['N']],
-  ['New task', ['Shift', 'N']],
+  ['New todo (quick-add)', ['Shift', 'N']],
   ['Quick-add dialog', ['Shift', 'Q']],
   ['New contact', ['C']],
   ['New calendar', ['Shift', 'C']],
-  ['Search', ['/']],
+  ['Search (sidebar)', ['/', '⌘K']],
   ['Settings', ['S']],
   ['Toggle sidebar', ['X']],
   ['Scratch notes', ['\\']],
@@ -34,7 +34,7 @@ const CALENDAR: Shortcut[] = [
   ['2-week view', ['Shift', 'W']],
   ['Month view', ['M']],
   ['Agenda view', ['A']],
-  ['Tasks', ['T']],
+  ['Agenda mode', ['T']],
   ['Today', ['.', 't']],
   ['Previous / next period', ['←', '→']],
   ['Previous period', [',']],
@@ -44,14 +44,10 @@ const CALENDAR: Shortcut[] = [
   ['Undo (toast action)', ['Z']],
 ];
 
-const TASKS: Shortcut[] = [
-  ['New task (quick-add)', ['Shift', 'N']],
-  ['Quick-add create', ['Enter']],
-];
-
 const DIALOGS: Shortcut[] = [
   ['Cancel / close', ['Esc']],
   ['Save', ['⌘/Ctrl', 'Enter']],
+  ['Quick-add create', ['Enter']],
   ['Delete', ['⌘/Ctrl', 'Shift', '⌫']],
 ];
 
@@ -98,7 +94,6 @@ export function HelpOverlay(): ComponentChildren {
         </div>
         <div class="flex min-w-0 flex-col gap-5">
           <ShortcutGroup title="Calendar" items={CALENDAR} />
-          <ShortcutGroup title="Tasks" items={TASKS} />
         </div>
       </div>
     </Modal>

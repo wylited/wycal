@@ -6,10 +6,9 @@ export const ROUTES = {
   calendar: '/',
   contacts: '/contacts',
   settings: '/settings',
-  /** Tasks (todos) — CONTRACTS §15. */
+  /** Tasks (todos) — merged into Agenda (§nav-revamp); kept only so stale
+   *  #/tasks links redirect to `#/?view=agenda` in app.tsx. */
   tasks: '/tasks',
-  /** Match search over events + todos; the query rides as `?q=` — CONTRACTS §15. */
-  search: '/search',
   /** Saved composite view by id (`#/view/:id`) — CONTRACTS §15. */
   savedView: '/view/:id',
 } as const;

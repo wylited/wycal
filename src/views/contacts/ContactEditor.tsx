@@ -31,6 +31,10 @@ interface ContactForm {
   photo: string
   /** True once the user edited the photo input ('' then means "remove"). */
   photoTouched: boolean
+  /** Comma-separated CATEGORIES tags input (same UX as event tags). */
+  tags: string
+  /** True once the user edited the tags input (untouched keeps them verbatim). */
+  tagsTouched: boolean
   emails: Row[]
   tels: Row[]
   address: AddressForm
@@ -41,6 +45,11 @@ const EMPTY_ADDRESS: AddressForm = { street: '', city: '', region: '', postcode:
 
 /** Shared EMAIL/TEL type options (vCard 4.0 TYPE tokens, lowercase). */
 const TYPE_OPTIONS = ['home', 'work', 'cell', 'other'] as const
+
+/** Comma-separated tags input → CATEGORIES list; blanks dropped, values trimmed. */
+function parseTags(input: string): string[] {
+  return input.split(',').map((t) => t.trim()).filter((t) => t !== '')
+}
 
 /**
  * BDAY → native date input value. Full dates in dashed (`1990-06-15`) or
@@ -71,6 +80,8 @@ function blankForm(): ContactForm {
     bdayTouched: false,
     photo: '',
     photoTouched: false,
+    tags: '',
+    tagsTouched: false,
     emails: [{ value: '', types: [] }],
     tels: [{ value: '', types: [] }],
     address: { ...EMPTY_ADDRESS },
@@ -104,6 +115,8 @@ function formFromVcard(v: Vcard | undefined): ContactForm {
     bdayTouched: false,
     photo: photoToInput(v.photo),
     photoTouched: false,
+    tags: v.categories.join(', '),
+    tagsTouched: false,
     emails: v.emails.length > 0 ? v.emails.map((e) => ({ value: e.value, types: [...e.types] })) : [{ value: '', types: [] }],
     tels: v.tels.length > 0 ? v.tels.map((t) => ({ value: t.value, types: [...t.types] })) : [{ value: '', types: [] }],
     address: addressFromValue(v.addresses[0]?.value),
@@ -132,6 +145,9 @@ function vcardFromForm(form: ContactForm, uid: string, source: Vcard | undefined
       : undefined
     : source?.bday
   const photo = form.photoTouched ? (form.photo.trim() !== '' ? form.photo.trim() : undefined) : source?.photo
+  // Tags: untouched input keeps the card's categories verbatim (mirrors BDAY/
+  // PHOTO), touched input parses the comma-separated list (clear = remove all).
+  const categories = form.tagsTouched ? parseTags(form.tags) : (source?.categories ?? [])
   return {
     uid,
     fn: form.fn.trim(),
@@ -142,6 +158,7 @@ function vcardFromForm(form: ContactForm, uid: string, source: Vcard | undefined
     title: form.title.trim() !== '' ? form.title.trim() : undefined,
     bday,
     photo,
+    categories,
     note: form.note.trim() !== '' ? form.note.trim() : undefined,
     addresses: addressValue !== '' ? [{ value: addressValue, types: [] }] : [],
     raw: '',
@@ -194,6 +211,7 @@ export function ContactEditor(props: {
           title: v.title,
           bday: v.bday,
           photo: v.photo,
+          categories: v.categories,
           note: v.note,
           addresses: v.addresses,
         }
@@ -340,6 +358,24 @@ export function ContactEditor(props: {
             />
           </Field>
         </div>
+        <Field label="Tags">
+          <input
+            type="text"
+            class="input"
+            placeholder="comma-separated, e.g. work, travel"
+            value={form.tags}
+            onInput={(e) => setForm((f) => ({ ...f, tags: e.currentTarget.value, tagsTouched: true }))}
+          />
+          {parseTags(form.tags).length > 0 && (
+            <div class="flex flex-wrap gap-1">
+              {parseTags(form.tags).map((t, i) => (
+                <span key={`${t}-${i}`} class="tag-chip">
+                  {t}
+                </span>
+              ))}
+            </div>
+          )}
+        </Field>
         <RowList
           label="Emails"
           inputType="email"

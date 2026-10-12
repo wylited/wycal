@@ -7,7 +7,7 @@ import { signal } from '@preact/signals'
 import { dayKey } from '../lib/util/date'
 import { collections, isCalendarVisible, setVisibility } from './calendars'
 import { newUid } from '../lib/util/id'
-import { prefs } from './prefs'
+import { prefs, setPrefs } from './prefs'
 
 export type SavedSection =
   | { type: 'agenda'; days: number; calendars?: string[] }
@@ -289,11 +289,160 @@ const RESERVED_KEYBIND_LETTERS: Record<string, true> = {
 }
 
 /** True when `key` cannot become a saved-view keybind: not a single printable
- * character, reserved by §16, or already bound to another V2 view. */
+ * character, reserved by §16, or already bound to another view (V2 schedule
+ * OR agenda — a keybind must resolve to exactly one view per mode). */
 export function keybindConflict(key: string, selfId?: string): boolean {
   if (key.length !== 1 || /\s/.test(key)) return true
   if (key >= '1' && key <= '9') return true
   if (RESERVED_KEYBIND_CHARS[key]) return true
   if (RESERVED_KEYBIND_LETTERS[key.toLowerCase()]) return true
-  return savedViewsV2.value.some((v) => v.keybind === key && v.id !== selfId)
+  return (
+    savedViewsV2.value.some((v) => v.keybind === key && v.id !== selfId) ||
+    savedAgendaViews.value.some((v) => v.keybind === key && v.id !== selfId)
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Agenda saved views (§nav-revamp): a SEPARATE list under 'wycal.agendaviews'.
+// Same inline save/rename/keybind UI as the V2 schedule views, but the shape
+// captures agenda-mode prefs: group + events/todos toggles + todo filters.
+// Applying writes those prefs (the agenda hash `#/?view=agenda` is left
+// untouched — the sidebar section is only reachable from agenda mode).
+// ---------------------------------------------------------------------------
+
+/** Agenda todo STATUS bands a saved view can capture. */
+export type AgendaSavedStatusFilter = 'all' | 'todo' | 'doing' | 'done'
+/** Agenda todo PRIORITY bands a saved view can capture. */
+export type AgendaSavedPriorityFilter = 'all' | 'A' | 'B' | 'C'
+
+export interface AgendaSavedView {
+  id: string
+  name: string
+  /** Single printable key that applies the view (§16-reserved keys rejected). */
+  keybind?: string
+  /** Agenda grouping chip ('flat' captures as 'day'). */
+  group: 'day' | 'calendar'
+  /** Show todo rows (prefs.agendaTodos). */
+  todos: boolean
+  /** Show event rows (prefs.agendaEvents). */
+  events: boolean
+  /** Todo status chip; absent → 'all'. */
+  statusFilter?: AgendaSavedStatusFilter
+  /** Todo priority chip; absent → 'all'. */
+  priorityFilter?: AgendaSavedPriorityFilter
+}
+
+const AGENDAVIEWS_STORAGE_KEY = 'wycal.agendaviews'
+
+const AGENDA_STATUS_VALUES: Record<string, true> = {
+  all: true, todo: true, doing: true, done: true,
+}
+const AGENDA_PRIORITY_VALUES: Record<string, true> = { all: true, A: true, B: true, C: true }
+
+/** Structural load guard: keep only agenda-view-shaped entries, drop the rest. */
+function loadSavedAgendaViews(): AgendaSavedView[] {
+  if (typeof localStorage === 'undefined') return []
+  try {
+    const raw = localStorage.getItem(AGENDAVIEWS_STORAGE_KEY)
+    if (!raw) return []
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    const out: AgendaSavedView[] = []
+    for (const r of parsed as Array<Record<string, unknown>>) {
+      if (typeof r !== 'object' || r === null) continue
+      if (typeof r.id !== 'string' || typeof r.name !== 'string') continue
+      if ((r.group !== 'day' && r.group !== 'calendar') || typeof r.todos !== 'boolean' || typeof r.events !== 'boolean') continue
+      out.push({
+        id: r.id,
+        name: r.name,
+        keybind: typeof r.keybind === 'string' && r.keybind.length > 0 ? r.keybind : undefined,
+        group: r.group,
+        todos: r.todos,
+        events: r.events,
+        statusFilter:
+          typeof r.statusFilter === 'string' && AGENDA_STATUS_VALUES[r.statusFilter]
+            ? (r.statusFilter as AgendaSavedStatusFilter)
+            : undefined,
+        priorityFilter:
+          typeof r.priorityFilter === 'string' && AGENDA_PRIORITY_VALUES[r.priorityFilter]
+            ? (r.priorityFilter as AgendaSavedPriorityFilter)
+            : undefined,
+      })
+    }
+    return out
+  } catch (err) {
+    console.warn('wycal: could not read agenda saved views, using none', err)
+    return []
+  }
+}
+
+/** All agenda saved views, persisted to 'wycal.agendaviews'. */
+export const savedAgendaViews = signal<AgendaSavedView[]>(loadSavedAgendaViews())
+
+function persistAgendaViews(): void {
+  try {
+    localStorage.setItem(AGENDAVIEWS_STORAGE_KEY, JSON.stringify(savedAgendaViews.value))
+  } catch (err) {
+    console.warn('wycal: could not persist agenda saved views', err)
+  }
+}
+
+/** Capture the CURRENT agenda prefs (group, events/todos toggles, todo
+ * filters — never the tags selection) as a new agenda view. `name` trims to a
+ * label, defaulting to "View <count>". */
+export function saveCurrentAgendaView(name?: string): AgendaSavedView {
+  const p = prefs.value
+  const saved: AgendaSavedView = {
+    id: newUid(),
+    name: name?.trim() || `View ${savedAgendaViews.value.length + 1}`,
+    group: p.agendaGroup === 'calendar' ? 'calendar' : 'day',
+    todos: p.agendaTodos ?? true,
+    events: p.agendaEvents ?? true,
+    statusFilter: p.agendaStatusFilter ?? 'all',
+    priorityFilter: p.agendaPriorityFilter ?? 'all',
+  }
+  savedAgendaViews.value = [...savedAgendaViews.value, saved]
+  persistAgendaViews()
+  return saved
+}
+
+/** Apply an agenda view: write its group/toggles/filters back into prefs.
+ * The agenda tag selection (agendaFilters.tags) is deliberately untouched. */
+export function applyAgendaView(id: string): AgendaSavedView | null {
+  const v = savedAgendaViews.value.find((sv) => sv.id === id)
+  if (!v) return null
+  setPrefs({
+    agendaGroup: v.group,
+    agendaTodos: v.todos,
+    agendaEvents: v.events,
+    agendaStatusFilter: v.statusFilter ?? 'all',
+    agendaPriorityFilter: v.priorityFilter ?? 'all',
+  })
+  return v
+}
+
+/** Rename an agenda view (no-op on an empty name; returns true when changed). */
+export function renameAgendaView(id: string, name: string): boolean {
+  const trimmed = name.trim()
+  if (!trimmed) return false
+  const exists = savedAgendaViews.value.some((v) => v.id === id)
+  if (!exists) return false
+  savedAgendaViews.value = savedAgendaViews.value.map((v) => (v.id === id ? { ...v, name: trimmed } : v))
+  persistAgendaViews()
+  return true
+}
+
+/** Set (or clear with an empty/undefined key) an agenda view's keybind. */
+export function setAgendaViewKeybind(id: string, keybind?: string): void {
+  const key = keybind?.trim() || undefined
+  savedAgendaViews.value = savedAgendaViews.value.map((v) =>
+    v.id === id ? { ...v, keybind: key } : v,
+  )
+  persistAgendaViews()
+}
+
+/** Drop an agenda saved view (no-op when the id is unknown). */
+export function deleteAgendaView(id: string): void {
+  savedAgendaViews.value = savedAgendaViews.value.filter((v) => v.id !== id)
+  persistAgendaViews()
 }

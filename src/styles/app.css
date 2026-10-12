@@ -977,3 +977,193 @@ html[data-sidebar-size='large'] .app-sidebar .mm-day {
   accent-color: var(--accent);
   cursor: pointer;
 }
+
+/* --- §agenda infinite scroll: the window grows +14d as the invisible
+   sentinel after the last section nears the viewport (AgendaList's
+   IntersectionObserver, rootMargin 400px). --- */
+
+.wycal-agenda-sentinel {
+  height: 1px;
+}
+
+/* Agenda mode trims the mobile bottom bar to [FAB +] [Group toggle] — two
+   even slots instead of the schedule bar's five (CalendarView). Two-class
+   specificity so it beats theme.css's five-slot .wycal-mobile-bar despite
+   theme.css loading later. */
+@media (max-width: 767px) {
+  .wycal-mobile-bar.is-agenda {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* --- §nav-revamp shell nav: top-bar mode switcher, sidebar-top search,
+   draggable section separators, sidebar side flip. One contiguous block at
+   EOF (a sibling may append after it — keep this block intact). --- */
+
+/* Mode switcher (Header): compact segmented control; pressed = schedule/
+   agenda/contacts. Unlayered so it overrides the .btn sizing utilities. */
+.mode-seg {
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface-2);
+}
+
+.mode-seg-btn {
+  padding: 3px 10px;
+  border-radius: calc(var(--r) - 2px);
+  font-size: var(--text-sm);
+  line-height: 1.4;
+  color: var(--muted);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.mode-seg-btn:hover {
+  color: var(--fg-strong);
+}
+
+.mode-seg-btn[aria-pressed='true'] {
+  background: var(--surface-3);
+  color: var(--fg-strong);
+  font-weight: 550;
+}
+
+/* Sidebar search (SidebarSearch): the box + inline results below it. The
+   results column scrolls internally; the old overlay's row components
+   (EventRow/TodoRow/.todo-heading) reuse their base styles, tightened here
+   for the 240px column. */
+.sb-search .input {
+  height: 30px;
+  font-size: var(--text-sm);
+}
+
+.sb-search-results {
+  max-height: 40vh;
+}
+
+.sb-search-results h3 {
+  font-size: var(--text-sm);
+}
+
+.sb-search-results .text-sm {
+  font-size: var(--text-xs);
+}
+
+.sb-search-group {
+  margin-top: 8px;
+}
+
+.sb-search-group-head {
+  padding: 0 2.5px 2px;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--fg-strong);
+}
+
+.sb-contact-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-8);
+  width: 100%;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: var(--r);
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.sb-contact-row:hover {
+  background: var(--surface-2);
+}
+
+/* Agenda filter chips (AgendaFilterBlock): toggle pills; pressed = on. */
+.sb-chip {
+  padding: 1px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-full);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--muted);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.sb-chip:hover {
+  color: var(--fg-strong);
+}
+
+.sb-chip[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.sb-chip-clear {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+}
+
+/* Resizable section stack (Sidebar): unset sections take their content
+   height (shrinking to the 60px floor with internal scroll when the stack
+   overflows); dragged heights are px flex-bases. The separator is an
+   invisible 6px grab strip — sections keep their own top borders as the
+   resting divider; hovering/dragging paints the accent line. */
+.sb-sections {
+  flex: 1 1 auto;
+}
+
+.sb-section {
+  display: flex;
+  flex-direction: column;
+  /* Shrinkable content height: underfull stack packs top-down (no dilution),
+     overfull stack squeezes sections to the 60px floor where their bodies
+     scroll internally. */
+  flex: 0 1 auto;
+  min-height: 60px;
+  overflow: hidden;
+}
+
+.sb-section-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.sb-sep {
+  position: relative;
+  flex: none;
+  height: 6px;
+  cursor: row-resize;
+  touch-action: none;
+  user-select: none;
+}
+
+.sb-sep::after {
+  content: '';
+  position: absolute;
+  inset: 2px 4px;
+  border-radius: var(--r-full);
+  background: transparent;
+}
+
+.sb-sep:hover::after,
+.sb-sep.is-dragging::after {
+  background: var(--accent-soft);
+}
+
+.sb-sep.is-dragging::after {
+  background: var(--accent);
+}
+
+/* Sidebar side flip (§nav-revamp): default = right edge (main column first).
+   `left` mirrors the border + drawer slide; the aside's flex order flips in
+   Sidebar.tsx. */
+html[data-sidebar-side='left'] .app-sidebar {
+  border-right-width: 1px;
+  border-left-width: 0;
+}

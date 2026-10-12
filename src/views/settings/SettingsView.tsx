@@ -2,7 +2,7 @@
 import { useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
 import { prefs, setPrefs } from '../../stores/prefs';
-import type { Density, FirstDay, SidebarSize, Theme } from '../../stores/prefs';
+import type { Density, FirstDay, SidebarSide, Theme } from '../../stores/prefs';
 import { accounts, addAccount, removeAccount, setAccountPassword, setRememberPassword } from '../../stores/accounts';
 import type { DavAccount } from '../../lib/caldav/types';
 import { initSync, resumeAccount, syncState } from '../../lib/sync/engine';
@@ -325,15 +325,14 @@ function AppearanceSection() {
           onChange={(density) => setPrefs({ density })}
         />
       </LabeledGroup>
-      <LabeledGroup label="Sidebar size" id="pref-sidebar-size-label">
-        <Segmented<SidebarSize>
-          value={prefs.value.sidebarSize}
+      <LabeledGroup label="Sidebar side" id="pref-sidebar-side-label">
+        <Segmented<SidebarSide>
+          value={prefs.value.sidebarSide}
           options={[
-            { value: 'compact', label: 'Compact' },
-            { value: 'default', label: 'Default' },
-            { value: 'large', label: 'Large' },
+            { value: 'left', label: 'Left' },
+            { value: 'right', label: 'Right' },
           ]}
-          onChange={(sidebarSize) => setPrefs({ sidebarSize })}
+          onChange={(sidebarSide) => setPrefs({ sidebarSide })}
         />
       </LabeledGroup>
     </div>

@@ -229,7 +229,7 @@ describe('N / FN structured values', () => {
   });
 
   it('always emits N (N:;;;; when names are absent) and FN', () => {
-    const card: Vcard = { uid: 'bare-1', fn: '', emails: [], tels: [], addresses: [], raw: '' };
+    const card: Vcard = { uid: 'bare-1', fn: '', emails: [], tels: [], addresses: [], categories: [], raw: '' };
     const out = serializeVcard(card);
     expect(out).toContain('N:;;;;');
     expect(out).toContain('\r\nFN:\r\n');
@@ -254,7 +254,7 @@ describe('vCard 3.0 input → 4.0 output', () => {
 describe('folding', () => {
   it('folds a 200+ char NOTE at 75 octets without breaking multibyte characters', () => {
     const note = 'a'.repeat(150) + '日本語'.repeat(50) + 'z'.repeat(50);
-    const card: Vcard = { uid: 'fold-1', fn: 'Fold Test', note, emails: [], tels: [], addresses: [], raw: '' };
+    const card: Vcard = { uid: 'fold-1', fn: 'Fold Test', note, emails: [], tels: [], addresses: [], categories: [], raw: '' };
     const out = serializeVcard(card);
     const physical = out.split('\r\n');
     expect(physical.length).toBeGreaterThan(2);

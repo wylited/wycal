@@ -1,7 +1,7 @@
 /** @jsxImportSource preact */
-import { useEffect, useMemo, useState } from 'preact/hooks'
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import type { ComponentChildren } from 'preact'
-import { contacts } from '../../stores/contacts'
+import { contactTagFilter, contacts, openContactRequest } from '../../stores/contacts'
 import type { ContactRecord } from '../../stores/contacts'
 import { collections } from '../../stores/calendars'
 import { syncState } from '../../lib/sync/engine'
@@ -16,6 +16,8 @@ export function ContactsView() {
   const [detail, setDetail] = useState<{ href: string; anchor: HTMLElement } | null>(null)
   const [editorOpen, setEditorOpen] = useState(false)
   const [editing, setEditing] = useState<ContactRecord | null>(null)
+  /** Scroll body of the contact grid — anchor for signal-raised popovers. */
+  const listBodyRef = useRef<HTMLDivElement | null>(null)
 
   // Memoized identity sort: reruns only when the contacts store map swaps,
   // not on every search keystroke (signal read during render = reactive).
@@ -24,7 +26,12 @@ export function ContactsView() {
     [contacts.value],
   )
   const q = query.trim().toLowerCase()
-  const list = q === '' ? all : all.filter((r) => matches(r.data, q))
+  // Sidebar tag filter is AND: a contact must carry every active tag. The
+  // search box stacks on top of it.
+  const activeTags = contactTagFilter.value
+  const list = all.filter(
+    (r) => activeTags.every((t) => r.data.categories.includes(t)) && (q === '' || matches(r.data, q)),
+  )
   const syncing = [...syncState.value.values()].some((s) => s.state === 'syncing')
   const addressbookUrl = collections.value.find((c) => c.kind === 'addressbook')?.url
   // Live lookup: an edit/delete swaps the contacts Map, so the popover (and
@@ -39,6 +46,18 @@ export function ContactsView() {
     window.addEventListener('wycal:newcontact', onNewContact)
     return () => window.removeEventListener('wycal:newcontact', onNewContact)
   }, [])
+
+  // Sidebar birthdays + note @mentions raise requestOpenContact — open the
+  // detail popover anchored to the list body (no card anchor exists outside
+  // the grid), then consume the one-shot request. Unknown/deleted hrefs and
+  // a missing anchor are dropped silently.
+  useEffect(() => {
+    const req = openContactRequest.value
+    if (req === null) return
+    openContactRequest.value = null
+    if (listBodyRef.current === null || !contacts.value.has(req.href)) return
+    setDetail({ href: req.href, anchor: listBodyRef.current })
+  }, [openContactRequest.value])
 
   /** Click-to-inspect (§22 pattern): anchor the detail popover to the card. */
   function openDetail(record: ContactRecord, anchor: HTMLElement): void {
@@ -85,10 +104,24 @@ export function ContactsView() {
       </div>
     )
   } else if (list.length === 0) {
+    const tagFiltered = activeTags.length > 0
     body = (
       <div class="flex h-full flex-col items-center justify-center gap-3 text-muted">
         <Icon.search size={24} />
-        <p class="text-sm">No contacts match “{query.trim()}”</p>
+        <p class="text-sm">
+          {tagFiltered
+            ? `No contacts tagged ${activeTags.map((t) => `“${t}”`).join(' + ')}${q !== '' ? ` matching “${query.trim()}”` : ''}`
+            : `No contacts match “${query.trim()}”`}
+        </p>
+        {tagFiltered && (
+          <button
+            type="button"
+            class="btn btn-ghost btn-sm"
+            onClick={() => (contactTagFilter.value = [])}
+          >
+            Clear tag filter
+          </button>
+        )}
       </div>
     )
   } else {
@@ -134,7 +167,7 @@ export function ContactsView() {
         </button>
       </div>
       <div class="flex min-h-0 flex-1">
-        <div class="min-w-0 flex-1 overflow-y-auto p-4">{body}</div>
+        <div ref={listBodyRef} class="min-w-0 flex-1 overflow-y-auto p-4">{body}</div>
         {detail !== null && detailRec !== undefined && (
           <ContactDetailPopover
             key={detailRec.href}
@@ -192,6 +225,16 @@ function ContactCard(props: {
             <span class="truncate">{tel}</span>
           </div>
         )}
+        {v.categories.length > 0 && (
+          <div class="mt-1.5 flex flex-wrap gap-1">
+            {v.categories.slice(0, 3).map((t, i) => (
+              <span key={`${t}-${i}`} class="hint-chip max-w-36 truncate" title={t}>
+                {t}
+              </span>
+            ))}
+            {v.categories.length > 3 && <span class="hint-chip">+{v.categories.length - 3}</span>}
+          </div>
+        )}
       </div>
     </button>
   )
@@ -199,9 +242,9 @@ function ContactCard(props: {
 
 // ---------------------------------------------------------------------------
 
-/** Case-insensitive `contains` across FN, ORG, EMAIL and TEL values. */
+/** Case-insensitive `contains` across FN, ORG, EMAIL, TEL and CATEGORIES values. */
 function matches(v: Vcard, q: string): boolean {
-  const hay = [v.fn, v.org ?? '', ...v.emails.map((e) => e.value), ...v.tels.map((t) => t.value)]
+  const hay = [v.fn, v.org ?? '', ...v.categories, ...v.emails.map((e) => e.value), ...v.tels.map((t) => t.value)]
     .join('\n')
     .toLowerCase()
   return hay.includes(q)

@@ -28,6 +28,8 @@ export interface Vcard {
    * or a TEXT value, unescaped; re-emitted verbatim on serialize.
    */
   bday?: string;
+  /** CATEGORIES tags (contact tags), text-unescaped; one comma-joined line on serialize. */
+  categories: string[];
   /** PHOTO as a URI; images use `data:<mediatype>;base64,<payload>`. */
   photo?: string;
   /**

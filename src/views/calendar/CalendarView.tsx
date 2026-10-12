@@ -45,7 +45,7 @@ import { useCalendarEvents } from './useCalendarEvents'
 import { useCalendarMove } from './useCalendarMove'
 import { useShortcuts } from './useShortcuts'
 import { AgendaList } from './AgendaList'
-import { agendaRangeLabel, type AgendaGroup, type AgendaRange } from '../../lib/agenda/agendaModel'
+import { type AgendaGroup } from '../../lib/agenda/agendaModel'
 
 import '../../styles/view-transitions.css'
 
@@ -164,18 +164,18 @@ const snapFor = (m: number): number => (m % 15 === 0 ? 15 : m % 10 === 0 ? 10 : 
 
 const ZOOM_NAMES: Partial<Record<number, string>> = { 30: 'Comfortable', 15: 'Detailed', 5: 'Ultra' }
 
-/** Agenda toolbar chips (§agenda): range stepper + grouping + todo toggle.
- * prefs-backed (agendaRange/agendaGroup/agendaTodos), agenda view only. */
-const AGENDA_RANGE_OPTIONS: SegmentedOption<AgendaRange>[] = [
-  { value: 7, label: '7d', title: 'Next 7 days' },
-  { value: 14, label: '14d', title: 'Next 14 days' },
-  { value: 30, label: '30d', title: 'Next 30 days' },
-]
+/** §agenda infinite scroll: the loaded window starts at 14 days and grows by
+ *  +14 whenever AgendaList's bottom sentinel nears the viewport; a hash-date
+ *  or grouping change resets it. No range chips — the agenda is endless. */
+const AGENDA_WINDOW_START = 14
+const AGENDA_WINDOW_STEP = 14
 
+/** Agenda toolbar chip (§agenda): grouping only — Day|Calendar per the
+ *  'day wise/calendar wise' spec (range/todos chips are gone; the sidebar
+ *  owns the todo filters). prefs-backed (agendaGroup), agenda view only. */
 const AGENDA_GROUP_OPTIONS: SegmentedOption<AgendaGroup>[] = [
   { value: 'day', label: 'Day', title: 'Group by day' },
   { value: 'calendar', label: 'Calendar', title: 'Group by calendar' },
-  { value: 'flat', label: 'Flat', title: 'Plain chronological list' },
 ]
 
 /** Snap a stored zoom value to the nearest ladder rung (migration safety;
@@ -226,6 +226,10 @@ export function CalendarView() {
     return { y: now.getFullYear(), m: now.getMonth() }
   })
   const [periodPop, setPeriodPop] = useState<'month' | 'year' | null>(null)
+  // §agenda infinite scroll: the loaded window in days (AgendaList's sentinel
+  // grows it) and the FC cursor date key that resets it on date changes.
+  const [agendaWindow, setAgendaWindow] = useState(AGENDA_WINDOW_START)
+  const [agendaDateKey, setAgendaDateKey] = useState<string | undefined>(initial.date)
 
   // --- §mobile bottom bar (calendar view, <768px) ------------------------------
   // 'View' opens the view/zoom sheet above the bar; outside click, Esc, or a
@@ -514,7 +518,9 @@ export function CalendarView() {
       handle.style.display = ''
       handle.style.top = `${r.top}px`
       handle.style.height = `${r.height}px`
-      handle.style.left = `${r.right - 3}px`
+      // The 6px handle hugs the aside's INNER edge (prefs.sidebarSide stamps
+      // <html data-sidebar-side>; absent → 'right').
+      handle.style.left = root.dataset.sidebarSide === 'left' ? `${r.right - 3}px` : `${r.left - 3}px`
     }
     const onDown = (e: PointerEvent) => {
       if (!mq.matches || e.button !== 0) return
@@ -527,7 +533,11 @@ export function CalendarView() {
     }
     const onMove = (e: PointerEvent) => {
       if (!dragging) return
-      root.style.setProperty('--sidebar-w', `${clampW(e.clientX - aside.getBoundingClientRect().left)}px`)
+      // Width tracks the pointer from the aside's inner edge (right sidebar:
+      // pointer − left; left sidebar: right − pointer).
+      const r = aside.getBoundingClientRect()
+      const w = root.dataset.sidebarSide === 'left' ? r.right - e.clientX : e.clientX - r.left
+      root.style.setProperty('--sidebar-w', `${clampW(w)}px`)
       sync()
     }
     const onUp = () => {
@@ -548,12 +558,16 @@ export function CalendarView() {
 
     const ro = new ResizeObserver(sync)
     ro.observe(aside)
+    // A live side flip moves the inner edge without resizing the aside.
+    const sideMo = new MutationObserver(sync)
+    sideMo.observe(root, { attributes: true, attributeFilter: ['data-sidebar-side'] })
     mq.addEventListener('change', sync)
     root.style.setProperty('--sidebar-w', `${clampW(prefs.value.sidebarWidth ?? 264)}px`)
     sync()
 
     return () => {
       ro.disconnect()
+      sideMo.disconnect()
       mq.removeEventListener('change', sync)
       handle.removeEventListener('pointerdown', onDown)
       handle.removeEventListener('pointermove', onMove)
@@ -612,6 +626,7 @@ export function CalendarView() {
     fcViewRef.current = arg.view.type
     setFcView(arg.view.type)
     dateRef.current = localDateStr(arg.view.currentStart)
+    setAgendaDateKey(dateRef.current) // §agenda: date change resets the window
     setCursor({ y: arg.view.currentStart.getFullYear(), m: arg.view.currentStart.getMonth() })
     // External hash writes (saved-view apply) carry a date FullCalendar hasn't
     // navigated to yet; their pending hashchange would be clobbered if we
@@ -863,17 +878,28 @@ export function CalendarView() {
   const zoomIdx = ZOOM_LADDER.indexOf(zoomMin)
 
   // §agenda: the 'agenda' view renders <AgendaList> instead of the FC host
-  // (the instance stays mounted, hidden) and swaps the grid pills for its
-  // chips; range/group/todos persist in prefs.
+  // (the instance stays mounted, hidden); its window grows without bound.
   const isAgenda = view === 'agenda'
-  const agendaRange = prefs.value.agendaRange ?? 14
-  const agendaGroup = prefs.value.agendaGroup ?? 'day'
+  // 'flat' is a legacy stored value: the chips are Day|Calendar now (the
+  // 'day wise/calendar wise' spec), so map it onto the day grouping.
+  const agendaGroupPref = prefs.value.agendaGroup ?? 'day'
+  const agendaGroup: AgendaGroup = agendaGroupPref === 'flat' ? 'day' : agendaGroupPref
   const agendaTodos = prefs.value.agendaTodos ?? true
   const agendaTitle = useMemo(() => {
     const t = new Date()
     t.setHours(0, 0, 0, 0)
-    return agendaRangeLabel(t, agendaRange)
-  }, [agendaRange])
+    // The first loaded day; '· …' once the window has grown past the initial
+    // one (§agenda infinite scroll keeps extending it).
+    const first = fmtDate(t, { weekday: true })
+    return agendaWindow > AGENDA_WINDOW_START ? `${first} · …` : first
+  }, [agendaWindow])
+  // Date or grouping change → back to the initial 14-day window. (Switching
+  // into agenda never resets: the grown window survives mode round-trips,
+  // like the hidden FC grid's state.)
+  useEffect(() => {
+    setAgendaWindow(AGENDA_WINDOW_START)
+  }, [agendaGroup, agendaDateKey])
+  const extendAgendaWindow = useCallback(() => setAgendaWindow((w) => w + AGENDA_WINDOW_STEP), [])
 
   const isEmpty = collections.value.length === 0 && ![...syncState.value.values()].some((s) => s.state === 'syncing')
   if (isEmpty) {
@@ -888,13 +914,19 @@ export function CalendarView() {
   return (
     <div class="flex h-full min-h-0 flex-col">
       <div class="fc-toolbar-scroll flex items-center gap-2 px-3 py-2">
-        <button type="button" class="btn btn-sm shrink-0 max-md:order-last" title="Today (.)" onClick={() => navigate('today')}>Today</button>
-        <button type="button" class="btn btn-ghost btn-sm shrink-0 max-md:hidden" aria-label="Previous period" title="Previous (←)" onClick={() => navigate('prev')}>
-          <Icon.chevronLeft size={16} />
-        </button>
-        <button type="button" class="btn btn-ghost btn-sm shrink-0 max-md:hidden" aria-label="Next period" title="Next (→)" onClick={() => navigate('next')}>
-          <Icon.chevronRight size={16} />
-        </button>
+        {/* §agenda: NO Today/‹/› — the agenda is an endless now-anchored list;
+            schedule modes keep the exact same controls. */}
+        {!isAgenda && (
+          <>
+            <button type="button" class="btn btn-sm shrink-0 max-md:order-last" title="Today (.)" onClick={() => navigate('today')}>Today</button>
+            <button type="button" class="btn btn-ghost btn-sm shrink-0 max-md:hidden" aria-label="Previous period" title="Previous (←)" onClick={() => navigate('prev')}>
+              <Icon.chevronLeft size={16} />
+            </button>
+            <button type="button" class="btn btn-ghost btn-sm shrink-0 max-md:hidden" aria-label="Next period" title="Next (→)" onClick={() => navigate('next')}>
+              <Icon.chevronRight size={16} />
+            </button>
+          </>
+        )}
         {isAgenda ? (
           <h2 class="min-w-0 truncate text-xl font-bold tabular-nums max-md:text-sm max-md:font-semibold">{agendaTitle}</h2>
         ) : fcView === 'dayGridMonth' ? (
@@ -912,13 +944,17 @@ export function CalendarView() {
           <h2 class="min-w-0 truncate text-xl font-bold tabular-nums max-md:text-sm max-md:font-semibold">{title}</h2>
         )}
         <div class="min-w-3 flex-1" />
-        <Segmented<SegValue> value={segValue} options={segOptions} onChange={(v) => { if (v !== '__n') switchView(v) }} ariaLabel="View" class="shrink-0 max-md:hidden" />
-        {(fcView === 'timeGridNDays' || isTimeGrid) && (
+        {/* §agenda: NO view segmented (day/3d/week…) — mode switching lives in
+            the shell header; schedule modes keep the control. */}
+        {!isAgenda && (
+          <Segmented<SegValue> value={segValue} options={segOptions} onChange={(v) => { if (v !== '__n') switchView(v) }} ariaLabel="View" class="shrink-0 max-md:hidden" />
+        )}
+        {!isAgenda && (fcView === 'timeGridNDays' || isTimeGrid) && (
           // Divider between the segmented control and the counter pills: the
           // pills must read as counters, never as navigation (user report).
           <span aria-hidden="true" class="mx-0.5 h-5 w-px shrink-0 bg-(--border) max-md:hidden" />
         )}
-        {fcView === 'timeGridNDays' && (
+        {!isAgenda && fcView === 'timeGridNDays' && (
           // §22 counter pill — −/+ live INSIDE the pill so they can't be
           // mistaken for prev/next arrows. `− N days +` per CONTRACTS §22.
           <div class="flex shrink-0 items-center gap-0.5 rounded-full border border-border bg-surface-2 py-0.5 pr-1 pl-2 max-md:hidden" role="group" aria-label="Days shown">
@@ -927,7 +963,7 @@ export function CalendarView() {
             <button type="button" class="btn btn-xs" aria-label="More days" title="More days (+)" disabled={nDays >= N_MAX} onClick={() => stepNDays(1)}>+</button>
           </div>
         )}
-        {isTimeGrid && (
+        {!isAgenda && isTimeGrid && (
           <div
             class="flex shrink-0 items-center gap-0.5 rounded-full border border-border bg-surface-2 py-0.5 pr-1 pl-2 max-md:hidden"
             role="group"
@@ -940,17 +976,12 @@ export function CalendarView() {
           </div>
         )}
         {isAgenda && (
-          // §agenda chips: range / grouping / todo toggle, all prefs-backed.
-          // Same divider + pill row treatment as the N-days counter above.
+          // §agenda chip: grouping only (Day|Calendar) — range chips and the
+          // Todos ✓ toggle are gone (infinite window; the sidebar owns the
+          // todo filters). Same divider + pill treatment as the N-days
+          // counter above; mobile uses the bottom-bar Group toggle instead.
           <>
             <span aria-hidden="true" class="mx-0.5 h-5 w-px shrink-0 bg-(--border) max-md:hidden" />
-            <Segmented<AgendaRange>
-              value={agendaRange}
-              options={AGENDA_RANGE_OPTIONS}
-              ariaLabel="Agenda range"
-              class="shrink-0 max-md:hidden"
-              onChange={(r) => setPrefs({ agendaRange: r })}
-            />
             <Segmented<AgendaGroup>
               value={agendaGroup}
               options={AGENDA_GROUP_OPTIONS}
@@ -958,15 +989,6 @@ export function CalendarView() {
               class="shrink-0 max-md:hidden"
               onChange={(g) => setPrefs({ agendaGroup: g })}
             />
-            <button
-              type="button"
-              class={`btn btn-sm shrink-0 max-md:hidden ${agendaTodos ? 'btn-primary' : 'btn-ghost'}`}
-              aria-pressed={agendaTodos}
-              title="Show tasks in the agenda list"
-              onClick={() => setPrefs({ agendaTodos: !agendaTodos })}
-            >
-              Todos{agendaTodos ? ' ✓' : ''}
-            </button>
           </>
         )}
       </div>
@@ -1049,7 +1071,8 @@ export function CalendarView() {
           </div>
           {isAgenda && (
             <AgendaList
-              range={agendaRange}
+              windowDays={agendaWindow}
+              onExtend={extendAgendaWindow}
               group={agendaGroup}
               showTodos={agendaTodos}
               search={q}
@@ -1064,8 +1087,8 @@ export function CalendarView() {
           The ＋ reuses the sidebar "New event" create path (requestNewEvent →
           openEditor({ mode: 'create', … })); the editor's z-50 modal overlay
           covers the bar while it is up. */}
-      <div ref={bottomBarRef} class="wycal-mobile-bar md:hidden">
-        {viewSheetOpen && (
+      <div ref={bottomBarRef} class={`wycal-mobile-bar md:hidden${isAgenda ? ' is-agenda' : ''}`}>
+        {viewSheetOpen && !isAgenda && (
           <div role="dialog" aria-label="Choose view" class="card wycal-view-sheet">
             <div class="grid grid-cols-2 gap-1">
               {VIEW_OPTIONS.map((o) => (
@@ -1107,17 +1130,37 @@ export function CalendarView() {
             )}
           </div>
         )}
-        <button type="button" class="btn btn-ghost btn-sm" aria-label="Previous period" title="Previous" onClick={() => navigate('prev')}>
-          <Icon.chevronLeft size={18} />
-        </button>
-        <button type="button" class="btn btn-ghost btn-sm" title="Today" onClick={() => navigate('today')}>Today</button>
-        <button type="button" class="wycal-fab" aria-label="New event" title="New event" onClick={requestNewEvent}>
-          <Icon.plus size={22} />
-        </button>
-        <button type="button" class="btn btn-ghost btn-sm" aria-expanded={viewSheetOpen} onClick={() => setViewSheetOpen((o) => !o)}>View</button>
-        <button type="button" class="btn btn-ghost btn-sm" aria-label="Next period" title="Next" onClick={() => navigate('next')}>
-          <Icon.chevronRight size={18} />
-        </button>
+        {/* §agenda mobile bar: ONLY [FAB +] [Group toggle] — no period
+            arrows/Today/View sheet (the agenda has no periods to step). */}
+        {isAgenda ? (
+          <>
+            <button type="button" class="wycal-fab" aria-label="New event" title="New event" onClick={requestNewEvent}>
+              <Icon.plus size={22} />
+            </button>
+            <button
+              type="button"
+              class="btn btn-ghost btn-sm"
+              title={`Agenda grouping — ${agendaGroup === 'calendar' ? 'calendar wise' : 'day wise'}`}
+              onClick={() => setPrefs({ agendaGroup: agendaGroup === 'calendar' ? 'day' : 'calendar' })}
+            >
+              {agendaGroup === 'calendar' ? 'Calendar' : 'Day'}
+            </button>
+          </>
+        ) : (
+          <>
+            <button type="button" class="btn btn-ghost btn-sm" aria-label="Previous period" title="Previous" onClick={() => navigate('prev')}>
+              <Icon.chevronLeft size={18} />
+            </button>
+            <button type="button" class="btn btn-ghost btn-sm" title="Today" onClick={() => navigate('today')}>Today</button>
+            <button type="button" class="wycal-fab" aria-label="New event" title="New event" onClick={requestNewEvent}>
+              <Icon.plus size={22} />
+            </button>
+            <button type="button" class="btn btn-ghost btn-sm" aria-expanded={viewSheetOpen} onClick={() => setViewSheetOpen((o) => !o)}>View</button>
+            <button type="button" class="btn btn-ghost btn-sm" aria-label="Next period" title="Next" onClick={() => navigate('next')}>
+              <Icon.chevronRight size={18} />
+            </button>
+          </>
+        )}
       </div>
       <ScopeModal open={scopeResolve !== null} onResolve={resolveScope} />
       {detail &&

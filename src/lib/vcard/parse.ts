@@ -259,7 +259,7 @@ export function parseVcf(text: string): Vcard[] {
     if (!prop) continue;
     if (prop.name === 'BEGIN') {
       finish();
-      card = { uid: '', fn: '', emails: [], tels: [], addresses: [], raw: '' };
+      card = { uid: '', fn: '', emails: [], tels: [], addresses: [], categories: [], raw: '' };
       continue;
     }
     if (prop.name === 'END') {
@@ -305,6 +305,15 @@ export function parseVcf(text: string): Vcard[] {
         // (unescaped); the engine materializes yearly events from it (§13).
         const bday = propValue(prop).trim();
         if (bday !== '') card.bday = bday;
+        break;
+      }
+      case 'CATEGORIES': {
+        // Comma list, text-unescaped; multiple CATEGORIES lines merge (same
+        // rule as VEVENT/VTODO CATEGORIES in lib/ics). Modeled here — never
+        // raw — so serialize emits exactly one line and edits cannot duplicate.
+        for (const c of splitUnescaped(maybeQpDecode(prop.value, prop.params), ',').map(unescapeText)) {
+          if (c !== '') card.categories.push(c);
+        }
         break;
       }
       case 'REV':

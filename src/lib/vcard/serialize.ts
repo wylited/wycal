@@ -97,6 +97,7 @@ export function serializeVcard(v: Vcard): string {
     lines.push(`ORG:${v.org.split(';').map(escapeText).join(';')}`);
   }
   if (v.title !== undefined && v.title !== '') lines.push(`TITLE:${escapeText(v.title)}`);
+  if (v.categories.length > 0) lines.push(`CATEGORIES:${v.categories.map(escapeText).join(',')}`);
   if (v.bday !== undefined && v.bday !== '') lines.push(`BDAY:${escapeText(v.bday)}`);
   if (v.photo !== undefined && v.photo !== '') lines.push(photoProp(v.photo));
 

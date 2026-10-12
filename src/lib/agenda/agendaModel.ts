@@ -2,8 +2,10 @@
  * Pure agenda model (§agenda): the grouping layer behind AgendaList. No
  * signal reads and no preact — callers feed it the same inputs the
  * listAgenda FullCalendar feed gets (occurrences() output + todo records of
- * visible calendars) plus a calendar-name/color lookup, and get back sorted
- * items shaped for the three agenda groupings ('day' | 'calendar' | 'flat').
+ * visible calendars) plus a calendar-name/color lookup and the sidebar's
+ * agenda filter state, and get back sorted items shaped for the agenda
+ * groupings ('day' | 'calendar'; legacy stored 'flat' is mapped to 'day'
+ * before it reaches here).
  *
  * Ordering contract (shared by every grouping): by local day, then all-day
  * rows before timed rows (FullCalendar list parity), then by start instant,
@@ -11,10 +13,12 @@
  */
 import type { EventRecord } from '../../stores/events'
 import type { TodoRecord } from '../../stores/todos'
-import { icsDateToDate } from '../../lib/ics/types'
+import { icsDateToDate, type IcsTodo } from '../../lib/ics/types'
 import { addDays, dayKey, fmtDate } from '../../lib/util/date'
 
-/** Agenda range presets (prefs.agendaRange; CalendarView stepper chips). */
+/** Legacy stored agenda window presets (prefs.agendaRange). The agenda is
+ *  infinite now (§agenda): the UI never reads this pref — it survives only so
+ *  old stored values keep validating. */
 export type AgendaRange = 7 | 14 | 30
 
 /** Agenda grouping modes (prefs.agendaGroup; CalendarView group chips). */
@@ -63,13 +67,6 @@ export function agendaShortDay(day: string): string {
   return `${d.toLocaleDateString(undefined, { weekday: 'short' })} ${d.getDate()}`
 }
 
-/** 'Oct 12 – Oct 25' (year suffix when the range crosses years) — toolbar title. */
-export function agendaRangeLabel(today: Date, range: AgendaRange): string {
-  const endIncl = addDays(today, range - 1)
-  const year = endIncl.getFullYear() !== today.getFullYear() ? { year: true as const } : {}
-  return `${fmtDate(today)} – ${fmtDate(endIncl, year)}`
-}
-
 /** Shared row order: day, then all-day first, then instant, then summary. */
 function compareItems(a: AgendaItem, b: AgendaItem): number {
   if (a.day !== b.day) return a.day < b.day ? -1 : 1
@@ -81,15 +78,36 @@ function compareItems(a: AgendaItem, b: AgendaItem): number {
 }
 
 export interface CollectAgendaArgs {
-  /** Local midnight of the first agenda day (the range anchor). */
+  /** Local midnight of the first agenda day (the window anchor). */
   today: Date
-  range: AgendaRange
+  /** Loaded window length in days ([today, today + windowDays)); the caller
+   *  grows it for the infinite scroll (§agenda). */
+  windowDays: number
   /** occurrences() output for the window (already visibility-filtered). */
   events: readonly EventRecord[]
   /** Todo records of visible calendars (visibility is the caller's gate). */
   todos: readonly TodoRecord[]
   /** Calendar attribution lookup (collections store read at the caller). */
   calInfo: (calendarUrl: string) => AgendaCalInfo | undefined
+  /** Sidebar filter state (stores/agendaFilters signals, read at the caller). */
+  filters: AgendaFilterState
+}
+
+/** Sidebar todo-filter state (§agenda filters; stores/agendaFilters signals):
+ *  status gates VTODO STATUS, priority gates PRIORITY bands (A=1–3, B=4–6,
+ *  C=7–9), tags gate CATEGORIES as a superset match (every selected tag
+ *  present; empty = no tag gate). Events answer to tags only. */
+export interface AgendaFilterState {
+  status: 'all' | 'todo' | 'doing' | 'done'
+  priority: 'all' | 'A' | 'B' | 'C'
+  tags: string[]
+}
+
+/** Sidebar status chip → the VTODO STATUS value it keeps. */
+const STATUS_FILTER: Record<Exclude<AgendaFilterState['status'], 'all'>, IcsTodo['status']> = {
+  todo: 'NEEDS-ACTION',
+  doing: 'IN-PROCESS',
+  done: 'COMPLETED',
 }
 
 /**
@@ -98,14 +116,24 @@ export interface CollectAgendaArgs {
  * list parity); items outside [today, today + range) are dropped.
  */
 export function collectAgendaItems(args: CollectAgendaArgs): AgendaItem[] {
-  const { today, range, events, todos, calInfo } = args
+  const { today, windowDays, events, todos, calInfo, filters } = args
   const startMs = today.getTime()
-  const endMs = addDays(today, range).getTime()
+  const endMs = addDays(today, windowDays).getTime()
+  const wantStatus = filters.status === 'all' ? null : STATUS_FILTER[filters.status]
+  const wantTags = filters.tags.length > 0
+  // Superset match: every selected tag must appear in the item's CATEGORIES.
+  const tagsOk = (cats: readonly string[]): boolean => !wantTags || filters.tags.every((t) => cats.includes(t))
+  const bandOk = (p: number | undefined): boolean => {
+    if (filters.priority === 'all') return true
+    if (p === undefined) return false
+    return filters.priority === (p <= 3 ? 'A' : p <= 6 ? 'B' : 'C')
+  }
   const items: AgendaItem[] = []
   for (const rec of events) {
     const when = icsDateToDate(rec.data.start)
     const t = when.getTime()
     if (t < startMs || t >= endMs) continue
+    if (!tagsOk(rec.data.categories)) continue // events: tag gate only
     const info = calInfo(rec.calendarUrl)
     items.push({
       kind: 'event',
@@ -124,6 +152,9 @@ export function collectAgendaItems(args: CollectAgendaArgs): AgendaItem[] {
     if (!when) continue
     const t = when.getTime()
     if (t < startMs || t >= endMs) continue
+    if (wantStatus !== null && rec.data.status !== wantStatus) continue
+    if (!bandOk(rec.data.priority)) continue
+    if (!tagsOk(rec.data.categories)) continue
     const info = calInfo(rec.calendarUrl)
     items.push({
       kind: 'todo',
