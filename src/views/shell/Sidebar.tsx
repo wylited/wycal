@@ -39,6 +39,8 @@ import { parseRoutePath, ROUTES, useHash } from '../../routes';
 import { Icon } from '../../ui/icons';
 import { useFocusTrap } from '../../ui/Modal';
 import { openEditor } from '../event-editor/editorState';
+import { openQuickAdd } from '../quickadd/QuickAddDialog';
+import { ShareAvailability } from '../calendar/ShareAvailability';
 import { MiniMonth } from './MiniMonth';
 import { MiniAgenda } from './MiniAgenda';
 import { NewCalendarModal } from './NewCalendarModal';
@@ -240,6 +242,13 @@ export function Sidebar(props: { open: boolean; onClose: () => void }) {
     });
   };
 
+  const onNewTask = (): void => {
+    props.onClose();
+    openQuickAdd('todo');
+  };
+
+  const [shareOpen, setShareOpen] = useState(false);
+
   return (
     <>
       <div
@@ -266,6 +275,16 @@ export function Sidebar(props: { open: boolean; onClose: () => void }) {
             <button type="button" class="btn btn-primary w-full" title="New event (N)" onClick={onNew}>
               <Icon.plus size={14} />
               New event
+            </button>
+            <button
+              type="button"
+              class="btn w-full"
+              title="New task (Q)"
+              aria-label="New task"
+              onClick={onNewTask}
+            >
+              <Icon.check size={14} />
+              New task
             </button>
           </div>
           <div class="px-3 pb-3">
@@ -547,16 +566,26 @@ export function Sidebar(props: { open: boolean; onClose: () => void }) {
             </a>
           </nav>
           <AccountStatus />
-          {/* Sidebar size footer control (mirrors Settings › Appearance):
-              'Size' label + three square calendar-glyph buttons at increasing
-              scales; pressed = active preset. */}
-          <div
-            class="flex items-center justify-center gap-2 border-t border-border px-4 py-1.5"
-            role="group"
-            aria-label="Sidebar size"
-            title="Sidebar size"
-          >
-            <span class="text-xs text-muted">Size</span>
+          {/* Sidebar footer (one row): Share availability ghost button next
+              to the Size control (mirrors Settings › Appearance: 'Size'
+              label + three square calendar-glyph buttons at increasing
+              scales; pressed = active preset). */}
+          <div class="flex items-center justify-center gap-3 border-t border-border px-4 py-1.5">
+            <button
+              type="button"
+              class="btn btn-ghost btn-sm"
+              title="Copy free/busy slots for the next week"
+              onClick={() => setShareOpen(true)}
+            >
+              Share availability
+            </button>
+            <div
+              class="flex items-center gap-2"
+              role="group"
+              aria-label="Sidebar size"
+              title="Sidebar size"
+            >
+              <span class="text-xs text-muted">Size</span>
             <div class="flex items-center gap-1">
               {SIDEBAR_SIZES.map((size, i) => (
                 <button
@@ -574,6 +603,7 @@ export function Sidebar(props: { open: boolean; onClose: () => void }) {
                   <Icon.calendar size={10 + i * 3} />
                 </button>
               ))}
+              </div>
             </div>
           </div>
         </div>
@@ -584,6 +614,7 @@ export function Sidebar(props: { open: boolean; onClose: () => void }) {
         <CalSettingsPopover calUrl={settings.url} anchor={settings.anchor} onClose={() => setSettings(null)} />
       )}
       <NewCalendarModal open={newCalOpen} onClose={() => setNewCalOpen(false)} />
+      <ShareAvailability open={shareOpen} onClose={() => setShareOpen(false)} />
     </>
   );
 }

@@ -55,6 +55,7 @@ import { Modal } from '../../ui/Modal'
 import { Segmented, type SegmentedOption } from '../../ui/Segmented'
 import { closeTodoEditor, openTodoEditor, todoEditor } from './todoEditor'
 import { describeDue, parseQuickAdd } from './quickAdd'
+import { openQuickAdd } from '../quickadd/QuickAddDialog'
 import { dueTime, parseQuickAdd as parseOrgQuickAdd, treeRows } from './tasksModel'
 
 // ---------------------------------------------------------------------------
@@ -854,6 +855,12 @@ export function TasksView() {
     <div class="tasks-view flex h-full min-h-0 flex-col">
       <div class="flex flex-wrap items-center gap-2 px-5 pt-4 pb-2">
         <Segmented<SmartTab> value={tab} options={TAB_OPTIONS} onChange={onTab} ariaLabel="Task view" />
+        <button
+          type="button" class="btn btn-primary" title="New task (Q)"
+          onClick={() => openQuickAdd('todo')}
+        >
+          + New task
+        </button>
         <div class="min-w-3 flex-1" />
         <input
           class="input w-44 text-sm"

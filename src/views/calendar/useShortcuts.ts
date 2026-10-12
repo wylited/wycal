@@ -4,7 +4,8 @@
  * navigation (funneled through `navigate` for the §22 view-motion classes),
  * +/- N-days step, E event details of the selected event, ⌫/Delete delete flow
  * on the selected event, Z most-recent toast action. Global keys (n/N/c/C/s/x/
- * q/?/1–9, `\` scratch notes) live in the app.tsx handler; `/` focuses the
+ * q/Q/?/1–9, `\` scratch notes; Q opens the global quick-add dialog while q
+ * closes the topmost dialog) live in the app.tsx handler; `/` focuses the
  * header search from there too. Suppressed in inputs and while a dialog or the
  * recurring-edit scope modal is up.
  */

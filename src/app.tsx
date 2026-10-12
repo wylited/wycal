@@ -31,6 +31,7 @@ import { TasksView } from './views/tasks/TasksView';
 import SearchMatchView from './views/search/SearchMatchView';
 import SavedComposite from './views/search/SavedComposite';
 import { EventEditor } from './views/event-editor/EventEditor';
+import { QuickAddDialog, openQuickAdd } from './views/quickadd/QuickAddDialog';
 import { Header } from './views/shell/Header';
 import { Sidebar } from './views/shell/Sidebar';
 import { ToastHost } from './ui/Toasts';
@@ -129,7 +130,8 @@ export function App() {
 
   // Global keyboard shortcuts (CONTRACTS §16): n new event · Shift+N new task
   // · c/C new contact/calendar · / search focus · s settings · x sidebar
-  // · \ scratch notes · ? help · 1–9 toggle calendar n · q close topmost dialog. Route-aware
+  // · \ scratch notes · ? help · 1–9 toggle calendar n · q close topmost dialog
+  // · Q quick-add dialog. Route-aware
   // (works on every route), input-gated, and dialog-gated (`q` still fires so
   // it can close the dialog). Calendar-scope keys live in useShortcuts.
   useEffect(() => {
@@ -196,6 +198,11 @@ export function App() {
           );
           break;
         }
+        case 'Q':
+          // Global quick-add dialog (CONTRACTS §16); gated on open dialogs so
+          // it never fires while an editor is up (lowercase q closes those).
+          if (!dialogUp) openQuickAdd();
+          break;
         default:
           return;
       }
@@ -230,6 +237,7 @@ export function App() {
       <ToastHost />
       <ScratchNotes />
       <EventEditor />
+      <QuickAddDialog />
       <HelpOverlay />
     </div>
   );

@@ -34,6 +34,15 @@
  * a second date token replaces the first, a second time token replaces the
  * first time. Impossible dates ('feb 30', '13/45', '25pm') are left in the
  * summary untouched.
+ *
+ * `parseQuickAddLine` wraps the same token pass for the global quick-add
+ * dialog (CONTRACTS §16 Q): a leading `todo:`/`task:`/`event:`/`meet:`/
+ * `meeting:` prefix forces the kind; otherwise a parsed wall time or a
+ * duration token ('30m', '1h', '1h30', '2 hours', 'for 45 min' — stripped
+ * only in this line pass, so todo quick-adds keep '30m' as summary text)
+ * implies a timed EVENT, and a date-only match or nothing implies a TODO.
+ * Returns { kind, summary, dueOrStart, durationMinutes?, allDay, priority?,
+ * tags }.
  */
 
 /** One parsed due: the matched token text, the resolved local date, its form. */
@@ -44,10 +53,28 @@ export interface QuickAddDue {
   allDay: boolean
 }
 
-/** One parsed quick-add line (natural-language pass). */
-export interface ParsedQuickAddLine {
+/** One parsed quick-add (token pass): the todo-shaped fields TasksView uses. */
+export interface ParsedQuickAdd {
   summary: string
   due?: QuickAddDue
+  priority?: 1 | 5 | 9
+  tags: string[]
+}
+
+/** What a quick-add line becomes: a calendar event or a task. */
+export type QuickAddKind = 'event' | 'todo'
+
+/** One parsed full quick-add line (dialog pass, CONTRACTS §16 Q). */
+export interface ParsedQuickAddLine {
+  kind: QuickAddKind
+  summary: string
+  /** The parsed date/time token (event start or todo due); undefined when
+   *  the line carried no date at all. */
+  dueOrStart?: QuickAddDue
+  /** Duration token minutes ('30m', '1h', '1h30'); only parsed by this pass. */
+  durationMinutes?: number
+  /** Mirrors `dueOrStart?.allDay` (true when nothing was parsed). */
+  allDay: boolean
   priority?: 1 | 5 | 9
   tags: string[]
 }
@@ -94,12 +121,31 @@ function weekdayDue(token: string, name: string, next: boolean): QuickAddDue | u
   return { text: token.trim(), date: new Date(now.getFullYear(), now.getMonth(), now.getDate() + inDays), allDay: true }
 }
 
-export function parseQuickAdd(input: string): ParsedQuickAddLine {
+export function parseQuickAdd(input: string): ParsedQuickAdd {
+  const t = parseTokens(input, false)
+  return { summary: t.summary, due: t.due, priority: t.priority, tags: t.tags }
+}
+
+/** Internal token pass behind parseQuickAdd/parseQuickAddLine; `durations`
+ *  additionally strips duration tokens (quick-add-line only, so the TasksView
+ *  todo quick-add keeps '30m' as summary text — TODOs have no duration). */
+interface TokenPass {
+  summary: string
+  due?: QuickAddDue
+  priority?: 1 | 5 | 9
+  tags: string[]
+  /** A wall-time token matched (the due, else today, became timed). */
+  hadTime: boolean
+  durationMinutes?: number
+}
+
+function parseTokens(input: string, durations: boolean): TokenPass {
   let summary = input
   let dateText = ''
   let timeText = ''
   let due: QuickAddDue | undefined
   let priority: 1 | 5 | 9 | undefined
+  let durationMinutes: number | undefined
   const tags: string[] = []
 
   /**
@@ -214,6 +260,38 @@ export function parseQuickAdd(input: string): ParsedQuickAddLine {
     atTime(Number(m[1]), m[2] === undefined ? 0 : Number(m[2]), (m[3] as string).toLowerCase() as 'am' | 'pm', m[0] as string),
   )
 
+  // Durations ('1h', '1h30m', '2 hours', '30m', '90 min', 'for 45m') — hours
+  // forms first so they can't be half-eaten by the bare-minutes form; 'for N
+  // <unit>' and bare 'N<unit>' both count. Zero and >24h stay text.
+  if (durations) {
+    // '1h', '1h30m', '2 hours', '2h 15m' — optional glued/separated minutes.
+    strip(/\b(?:for\s+)?(\d{1,3})\s*(?:hours?|hrs?|h)\s*(?:(\d{1,2})\s*(?:m|min|mins|minutes?))?\b/gi, (m) => {
+      const h = Number(m[1])
+      const min = m[2] === undefined ? 0 : Number(m[2])
+      const mins = h * 60 + min
+      if (h > 23 || min > 59 || mins === 0 || mins > 24 * 60) return false
+      durationMinutes = mins
+      return true
+    })
+    // '1h30' / '2 hours 30' — trailing minutes with no unit (the form above
+    // needs one, so its \b would reject these; runs after it, so '1h30m' is
+    // already gone).
+    strip(/\b(?:for\s+)?(\d{1,3})\s*(?:hours?|hrs?|h)\s*(\d{1,2})\b/gi, (m) => {
+      const h = Number(m[1])
+      const min = Number(m[2])
+      const mins = h * 60 + min
+      if (h > 23 || min > 59 || mins === 0 || mins > 24 * 60) return false
+      durationMinutes = mins
+      return true
+    })
+    strip(/\b(?:for\s+)?(\d{1,3})\s*(?:minutes?|mins?|m)\b/gi, (m) => {
+      const mins = Number(m[1])
+      if (mins === 0 || mins > 24 * 60) return false
+      durationMinutes = mins
+      return true
+    })
+  }
+
   if (due !== undefined) due.text = [dateText, timeText].filter((t) => t !== '').join(' ')
   // Collapse the gaps left by stripped tokens; tidy space-before-punctuation
   // and dangling edge separators.
@@ -223,5 +301,37 @@ export function parseQuickAdd(input: string): ParsedQuickAddLine {
     .replace(/^[,;:.\s]+/, '')
     .replace(/[,;:\s]+$/, '')
     .trim()
-  return { summary, due, priority, tags }
+  return { summary, due, priority, tags, hadTime: timeText !== '', durationMinutes }
+}
+
+/** Forced-kind prefixes: 'todo:'/'task:' → todo, 'event:'/'meet:'/'meeting:'
+ *  → event (case-insensitive, start of the trimmed line). */
+const FORCED_PREFIX = /^\s*(todo|task|event|meet|meeting)\s*:/i
+
+/**
+ * Full-line parse for the global quick-add dialog (CONTRACTS §16 Q): the
+ * forced-kind prefix wins; otherwise a parsed wall time or a duration token
+ * implies a timed EVENT (weekday + time pairs land here too), a date-only
+ * match or nothing implies a TODO. All todo tokens (dates, times, priorities,
+ * +tags) behave exactly as in parseQuickAdd; the summary comes back with
+ * every recognized token stripped.
+ */
+export function parseQuickAddLine(input: string): ParsedQuickAddLine {
+  let rest = input
+  let forced: QuickAddKind | undefined
+  const m = FORCED_PREFIX.exec(rest)
+  if (m !== null) {
+    forced = /^(todo|task)$/i.test(m[1]) ? 'todo' : 'event'
+    rest = rest.slice(m[0].length)
+  }
+  const t = parseTokens(rest, true)
+  return {
+    kind: forced ?? (t.hadTime || t.durationMinutes !== undefined ? 'event' : 'todo'),
+    summary: t.summary,
+    dueOrStart: t.due,
+    durationMinutes: t.durationMinutes,
+    allDay: t.due?.allDay ?? true,
+    priority: t.priority,
+    tags: t.tags,
+  }
 }

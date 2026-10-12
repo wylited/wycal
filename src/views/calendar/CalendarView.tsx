@@ -44,6 +44,8 @@ import { ScopeModal } from './ScopeModal'
 import { useCalendarEvents } from './useCalendarEvents'
 import { useCalendarMove } from './useCalendarMove'
 import { useShortcuts } from './useShortcuts'
+import { AgendaList } from './AgendaList'
+import { agendaRangeLabel, type AgendaGroup, type AgendaRange } from '../../lib/agenda/agendaModel'
 
 import '../../styles/view-transitions.css'
 
@@ -161,6 +163,20 @@ const ZOOM_LADDER: readonly number[] = [30, 20, 15, 10, 5]
 const snapFor = (m: number): number => (m % 15 === 0 ? 15 : m % 10 === 0 ? 10 : 5)
 
 const ZOOM_NAMES: Partial<Record<number, string>> = { 30: 'Comfortable', 15: 'Detailed', 5: 'Ultra' }
+
+/** Agenda toolbar chips (§agenda): range stepper + grouping + todo toggle.
+ * prefs-backed (agendaRange/agendaGroup/agendaTodos), agenda view only. */
+const AGENDA_RANGE_OPTIONS: SegmentedOption<AgendaRange>[] = [
+  { value: 7, label: '7d', title: 'Next 7 days' },
+  { value: 14, label: '14d', title: 'Next 14 days' },
+  { value: 30, label: '30d', title: 'Next 30 days' },
+]
+
+const AGENDA_GROUP_OPTIONS: SegmentedOption<AgendaGroup>[] = [
+  { value: 'day', label: 'Day', title: 'Group by day' },
+  { value: 'calendar', label: 'Calendar', title: 'Group by calendar' },
+  { value: 'flat', label: 'Flat', title: 'Plain chronological list' },
+]
 
 /** Snap a stored zoom value to the nearest ladder rung (migration safety;
  *  absent → 30, the 'Comfortable' default). */
@@ -846,6 +862,19 @@ export function CalendarView() {
   const zoomMin = zoomRung(prefs.value.zoom)
   const zoomIdx = ZOOM_LADDER.indexOf(zoomMin)
 
+  // §agenda: the 'agenda' view renders <AgendaList> instead of the FC host
+  // (the instance stays mounted, hidden) and swaps the grid pills for its
+  // chips; range/group/todos persist in prefs.
+  const isAgenda = view === 'agenda'
+  const agendaRange = prefs.value.agendaRange ?? 14
+  const agendaGroup = prefs.value.agendaGroup ?? 'day'
+  const agendaTodos = prefs.value.agendaTodos ?? true
+  const agendaTitle = useMemo(() => {
+    const t = new Date()
+    t.setHours(0, 0, 0, 0)
+    return agendaRangeLabel(t, agendaRange)
+  }, [agendaRange])
+
   const isEmpty = collections.value.length === 0 && ![...syncState.value.values()].some((s) => s.state === 'syncing')
   if (isEmpty) {
     // Account exists but its sync errored before any collection arrived →
@@ -866,7 +895,9 @@ export function CalendarView() {
         <button type="button" class="btn btn-ghost btn-sm shrink-0 max-md:hidden" aria-label="Next period" title="Next (→)" onClick={() => navigate('next')}>
           <Icon.chevronRight size={16} />
         </button>
-        {fcView === 'dayGridMonth' ? (
+        {isAgenda ? (
+          <h2 class="min-w-0 truncate text-xl font-bold tabular-nums max-md:text-sm max-md:font-semibold">{agendaTitle}</h2>
+        ) : fcView === 'dayGridMonth' ? (
           // §9.2: in month view the period label splits into month + year dropdowns.
           <PeriodPickers
             cursor={cursor}
@@ -908,6 +939,36 @@ export function CalendarView() {
             <button type="button" class="btn btn-xs" aria-label="Zoom in time axis" title="Zoom in (finer time axis)" disabled={zoomIdx === ZOOM_LADDER.length - 1} onClick={() => stepZoom(1)}>+</button>
           </div>
         )}
+        {isAgenda && (
+          // §agenda chips: range / grouping / todo toggle, all prefs-backed.
+          // Same divider + pill row treatment as the N-days counter above.
+          <>
+            <span aria-hidden="true" class="mx-0.5 h-5 w-px shrink-0 bg-(--border) max-md:hidden" />
+            <Segmented<AgendaRange>
+              value={agendaRange}
+              options={AGENDA_RANGE_OPTIONS}
+              ariaLabel="Agenda range"
+              class="shrink-0 max-md:hidden"
+              onChange={(r) => setPrefs({ agendaRange: r })}
+            />
+            <Segmented<AgendaGroup>
+              value={agendaGroup}
+              options={AGENDA_GROUP_OPTIONS}
+              ariaLabel="Agenda grouping"
+              class="shrink-0 max-md:hidden"
+              onChange={(g) => setPrefs({ agendaGroup: g })}
+            />
+            <button
+              type="button"
+              class={`btn btn-sm shrink-0 max-md:hidden ${agendaTodos ? 'btn-primary' : 'btn-ghost'}`}
+              aria-pressed={agendaTodos}
+              title="Show tasks in the agenda list"
+              onClick={() => setPrefs({ agendaTodos: !agendaTodos })}
+            >
+              Todos{agendaTodos ? ' ✓' : ''}
+            </button>
+          </>
+        )}
       </div>
       <div ref={gridWrapRef} class="wycal-stage-wrap min-h-0 flex-1">
         {initialSyncing ? (
@@ -918,7 +979,11 @@ export function CalendarView() {
             ))}
           </div>
         ) : (
-          <div ref={stageRef} class="relative h-full">
+          <>
+          {/* §agenda: the FC instance stays mounted (hidden) so grid state
+              (date, view, feed) survives agenda round-trips; AgendaList takes
+              the stage while view=agenda. */}
+          <div ref={stageRef} class={`relative h-full${isAgenda ? ' hidden' : ''}`}>
           <FullCalendar
           ref={calendarRef}
           plugins={PLUGINS}
@@ -982,6 +1047,17 @@ export function CalendarView() {
             </div>
           )}
           </div>
+          {isAgenda && (
+            <AgendaList
+              range={agendaRange}
+              group={agendaGroup}
+              showTodos={agendaTodos}
+              search={q}
+              onEventClick={openDetail}
+              onTodoClick={openTodoDetail}
+            />
+          )}
+          </>
         )}
       </div>
       {/* §mobile bottom action bar (<768px only): ‹ · Today · ＋ · View · ›.

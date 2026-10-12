@@ -894,3 +894,86 @@ html[data-sidebar-size='large'] .app-sidebar .mm-day {
   background: var(--accent-soft);
   color: var(--accent);
 }
+
+/* --- Agenda view (§agenda): AgendaList under the calendar toolbar. Reuses
+   the Tasks-view org-super-agenda classes (.agenda-day/.agenda-day-head/
+   .agenda-cal-head); everything new is scoped under .wycal-agenda so the
+   Tasks view is untouched. Rhythm mirrors §9.4: 16px between day sections,
+   sticky day headers, 34px rows with surface-2 hover. --- */
+
+.wycal-agenda {
+  padding: var(--sp-8) 12px var(--sp-20);
+}
+
+/* Sticky day headers need the page background behind them, or rows scroll
+   through the label. */
+.wycal-agenda .agenda-day-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg);
+  padding: var(--sp-4) 0;
+}
+
+.wycal-agenda .agenda-cal-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg);
+  padding: var(--sp-4) 0;
+  font-size: var(--text-sm);
+  line-height: 1.8;
+}
+
+.wycal-agenda-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-8);
+  height: 34px;
+  padding: 0 10px;
+  border-radius: var(--r);
+  cursor: pointer;
+}
+
+.wycal-agenda-row:hover {
+  background: var(--surface-2);
+}
+
+.wycal-agenda-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Muted lead column: day tag ('Mon 13') and/or time ('All day', '5:00 PM');
+   fixed width so dot + title columns align across rows. */
+.wycal-agenda-when {
+  flex: none;
+  min-width: 56px;
+  font-size: var(--text-xs);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.wycal-agenda-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-sm);
+  color: var(--fg-strong);
+}
+
+.wycal-agenda-cal {
+  flex: none;
+  font-size: var(--text-xs);
+  color: var(--muted);
+}
+
+.wycal-agenda-row input[type='checkbox'] {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}

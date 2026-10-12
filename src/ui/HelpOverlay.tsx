@@ -16,6 +16,7 @@ type Shortcut = [action: string, keys: string[]];
 const GLOBAL: Shortcut[] = [
   ['New event', ['N']],
   ['New task', ['Shift', 'N']],
+  ['Quick-add dialog', ['Shift', 'Q']],
   ['New contact', ['C']],
   ['New calendar', ['Shift', 'C']],
   ['Search', ['/']],

@@ -1,4 +1,5 @@
 import { signal } from '@preact/signals';
+import type { AgendaGroup, AgendaRange } from '../lib/agenda/agendaModel';
 
 export type Theme = 'light' | 'dark' | 'auto';
 export type Density = 'compact' | 'cozy';
@@ -25,6 +26,12 @@ interface Prefs {
   zoom?: number;
   /** Provision Inbox/Birthdays calendars per account when missing (§13). */
   autoProvision?: boolean;
+  /** Agenda view window in days (§agenda chips); absent → 14. */
+  agendaRange?: AgendaRange;
+  /** Agenda view grouping (§agenda chips); absent → 'day'. */
+  agendaGroup?: AgendaGroup;
+  /** Show todo rows in the agenda view (§agenda chip); absent → true. */
+  agendaTodos?: boolean;
 }
 
 const PREFS_STORAGE_KEY = 'wycal.prefs';
@@ -40,6 +47,9 @@ const DEFAULT_PREFS: Readonly<Prefs> = {
   sidebarWidth: 264,
   zoom: 30,
   autoProvision: true,
+  agendaRange: 14,
+  agendaGroup: 'day',
+  agendaTodos: true,
 };
 
 function loadPrefs(): Prefs {
@@ -83,6 +93,15 @@ function loadPrefs(): Prefs {
               ? 15
               : DEFAULT_PREFS.zoom,
       autoProvision: typeof s.autoProvision === 'boolean' ? s.autoProvision : DEFAULT_PREFS.autoProvision,
+      agendaRange:
+        s.agendaRange === 7 || s.agendaRange === 14 || s.agendaRange === 30
+          ? s.agendaRange
+          : DEFAULT_PREFS.agendaRange,
+      agendaGroup:
+        s.agendaGroup === 'day' || s.agendaGroup === 'calendar' || s.agendaGroup === 'flat'
+          ? s.agendaGroup
+          : DEFAULT_PREFS.agendaGroup,
+      agendaTodos: typeof s.agendaTodos === 'boolean' ? s.agendaTodos : DEFAULT_PREFS.agendaTodos,
     };
   } catch (err) {
     console.warn('wycal: could not read prefs, using defaults', err);
