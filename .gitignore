@@ -1,0 +1,8 @@
+node_modules/
+dist/
+scripts/radicale/data/
+.DS_Store
+*.local
+tsconfig.tsbuildinfo
+scripts/radicale/.venv/
+scripts/radicale/*.log

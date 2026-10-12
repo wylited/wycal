@@ -1,0 +1,12 @@
+BEGIN:VCARD
+VERSION:4.0
+UID:seed-306@wycal
+FN:Farida Noor
+REV:2026-10-10T18:27:32Z
+N:Noor;Farida;;;
+ORG:Kite and Anchor
+TITLE:Operations
+EMAIL;TYPE=work:farida@kiteanchor.example
+TEL;TYPE=work:+49 30 5550106
+ADR;TYPE=work:;;Torstrasse 10;Berlin;;10119;Germany
+END:VCARD

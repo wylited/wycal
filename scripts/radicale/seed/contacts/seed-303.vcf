@@ -1,0 +1,12 @@
+BEGIN:VCARD
+VERSION:4.0
+UID:seed-303@wycal
+FN:Carol O'Brien
+REV:2026-10-10T18:27:32Z
+N:O'Brien;Carol;;;
+ORG:Northwind Traders
+TITLE:Accounts lead
+EMAIL;TYPE=work:carol.obrien@northwind.example
+TEL;TYPE=cell:+1 555 0103
+NOTE:Prefers email over phone
+END:VCARD

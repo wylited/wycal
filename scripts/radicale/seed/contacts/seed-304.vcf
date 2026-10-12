@@ -1,0 +1,13 @@
+BEGIN:VCARD
+VERSION:4.0
+UID:seed-304@wycal
+FN:Dara Haddad
+REV:2026-10-10T18:27:32Z
+N:Haddad;Dara;;;
+ORG:Solaris Labs
+TITLE:Research engineer
+EMAIL;TYPE=work:dara@solaris.example
+TEL;TYPE=work:+1 555 0104
+TEL;TYPE=cell:+1 555 0105
+ADR;TYPE=work:;;1 Circular Road;Cupertino;CA;95014;USA
+END:VCARD

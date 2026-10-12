@@ -1,0 +1,12 @@
+BEGIN:VCARD
+VERSION:4.0
+UID:seed-302@wycal
+FN:Bob Martinez
+REV:2026-10-10T18:27:32Z
+N:Martinez;Bob;;;
+ORG:Acme Interactive
+TITLE:Frontend engineer
+EMAIL;TYPE=work:bob@acme.example
+TEL;TYPE=home:+1 555 0102
+ADR;TYPE=home:;;88 Pine Avenue;Portland;OR;97204;USA
+END:VCARD

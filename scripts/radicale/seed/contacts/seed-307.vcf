@@ -1,0 +1,11 @@
+BEGIN:VCARD
+VERSION:4.0
+UID:seed-307@wycal
+FN:Gregor Ivanov
+REV:2026-10-10T18:27:32Z
+N:Ivanov;Gregor;;;
+TITLE:Freelance photographer
+EMAIL;TYPE=work:gregor@studio.example
+EMAIL;TYPE=home:gregor.ivanov@mail.example
+TEL;TYPE=cell:+1 555 0107
+END:VCARD

@@ -1,0 +1,36 @@
+/* Calendar view motion (CONTRACTS §22): enter-only, compositor-only
+   (transform/opacity — no reflow), 150ms, applied by CalendarView to the
+   wycal-owned stage div around <FullCalendar> — never to FC-internal nodes.
+
+   .wycal-anim-prev  previous-period nav — new frame enters from the left
+   .wycal-anim-next  next-period nav — new frame enters from the right
+   .wycal-anim-view  view-type switch / Today — fade + slight zoom-in
+   Classes are removed on animationend (CalendarView also guards with a timer;
+   repeats force a reflow so the animation restarts). */
+
+@keyframes wycal-slide-in-left {
+  from { opacity: 0; transform: translateX(-16px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes wycal-slide-in-right {
+  from { opacity: 0; transform: translateX(16px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes wycal-fade-zoom {
+  from { opacity: 0; transform: scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+
+.wycal-anim-prev { animation: wycal-slide-in-left 150ms ease-out; }
+.wycal-anim-next { animation: wycal-slide-in-right 150ms ease-out; }
+.wycal-anim-view { animation: wycal-fade-zoom 150ms ease-out; }
+
+@media (prefers-reduced-motion: reduce) {
+  .wycal-anim-prev,
+  .wycal-anim-next,
+  .wycal-anim-view {
+    animation: none;
+  }
+}

@@ -1,0 +1,13 @@
+BEGIN:VCARD
+VERSION:4.0
+UID:seed-301@wycal
+FN:Alice Chen
+REV:2026-10-10T18:27:32Z
+N:Chen;Alice;;;
+ORG:Example Corp;Design
+TITLE:Product designer
+EMAIL;TYPE=work:alice.chen@example.com
+EMAIL;TYPE=home:alice@example.net
+TEL;TYPE=work,voice:+1 555 0101
+ADR;TYPE=work:;;100 Market Street;San Francisco;CA;94105;USA
+END:VCARD

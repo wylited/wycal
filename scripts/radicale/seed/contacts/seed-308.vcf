@@ -1,0 +1,12 @@
+BEGIN:VCARD
+VERSION:4.0
+UID:seed-308@wycal
+FN:Hana Suzuki
+REV:2026-10-10T18:27:32Z
+N:Suzuki;Hana;;;
+ORG:Sakura Systems
+TITLE:Program manager
+EMAIL;TYPE=work:hana.suzuki@sakura.example
+TEL;TYPE=work:+81 3 5555 0108
+ADR;TYPE=work:;;1-2-3 Shibuya;Tokyo;;150-0002;Japan
+END:VCARD

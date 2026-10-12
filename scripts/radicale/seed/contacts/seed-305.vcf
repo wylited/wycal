@@ -1,0 +1,14 @@
+BEGIN:VCARD
+VERSION:4.0
+UID:seed-305@wycal
+FN:Evan Wu
+REV:2026-10-10T18:27:32Z
+N:Wu;Evan;;;
+ORG:Wulfram Consulting
+TITLE:Principal
+EMAIL;TYPE=work:evan@wulfram.example
+PHOTO;VALUE=uri;MEDIATYPE=image/png:data:image/png\;base64\,iVBORw0KGgoAAA
+ ANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5E
+ rkJggg==
+ADR;TYPE=work:;;221B Baker Street;London;;NW1 6XE;United Kingdom
+END:VCARD

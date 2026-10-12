@@ -1,0 +1,647 @@
+/* wycal design tokens — single source of truth: design.md §1–§3.
+   Light on :root, dark on [data-theme='dark'], auto on [data-theme='auto'] resolved
+   via prefers-color-scheme. NEVER hardcode hex values in components: use these
+   custom properties (or Tailwind utilities mapped onto them in app.css). */
+
+:root {
+  color-scheme: light;
+
+  /* Color (design.md §1) */
+  --bg: #fafafa;
+  --surface: #ffffff;
+  --surface-2: #f2f3f4;
+  --surface-3: #e8eaec;
+  --border: #e2e4e7;
+  --border-strong: #c9cdd1;
+  --fg: #5c6166;
+  --fg-strong: #21252b;
+  --muted: #8a9199;
+  --accent: #fa8d3e;
+  --accent-fg: #ffffff;
+  --accent-soft: #fa8d3e26;
+  --danger: #f07178;
+  --danger-soft: #f0717826;
+  --success: #86b300;
+  --warning: #fa8d3e;
+  --overlay: #5c616633;
+  --focus-ring: #55b4d4;
+
+  /* Event palette — calendar colors, solid + -soft variant (design.md §1) */
+  --ev-blue: #55b4d4;
+  --ev-blue-soft: #55b4d426;
+  --ev-green: #86b300;
+  --ev-green-soft: #86b30026;
+  --ev-red: #f07178;
+  --ev-red-soft: #f0717826;
+  --ev-purple: #a37acc;
+  --ev-purple-soft: #a37acc26;
+  --ev-yellow: #cca700;
+  --ev-yellow-soft: #cca70026;
+  --ev-cyan: #4cc2b4;
+  --ev-cyan-soft: #4cc2b426;
+  --ev-orange: #fa8d3e;
+  --ev-orange-soft: #fa8d3e26;
+  --ev-pink: #d597c0;
+  --ev-pink-soft: #d597c026;
+
+  /* Typography (design.md §2) */
+  --font-sans: 'Atkinson Hyperlegible', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', monospace;
+  --text-xs: 11px;
+  --text-sm: 12.5px;
+  --text-base: 13.5px;
+  --text-md: 15px;
+  --text-lg: 18px;
+  --text-xl: 22px;
+
+  /* Shape + elevation (design.md §3) */
+  --r-sm: 4px;
+  --r: 6px;
+  --r-lg: 10px;
+  --r-full: 999px;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.08);
+  --shadow-2: 0 8px 28px rgba(0, 0, 0, 0.18);
+
+  /* Spacing scale (design.md §3) */
+  --sp-2: 2px;
+  --sp-4: 4px;
+  --sp-6: 6px;
+  --sp-8: 8px;
+  --sp-12: 12px;
+  --sp-16: 16px;
+  --sp-20: 20px;
+  --sp-24: 24px;
+  --sp-32: 32px;
+
+  /* Layout constants (design.md §4) */
+  --sidebar-w: 264px;
+  --header-h: 48px;
+  --drawer-w: 280px;
+}
+
+[data-theme='dark'] {
+  color-scheme: dark;
+
+  --bg: #0b0e14;
+  --surface: #131721;
+  --surface-2: #1d222c;
+  --surface-3: #272d38;
+  --border: #262b36;
+  --border-strong: #3a4150;
+  --fg: #bfbdb6;
+  --fg-strong: #e6e1cf;
+  --muted: #6c7380;
+  --accent: #ff8f40;
+  --accent-fg: #0b0e14;
+  --accent-soft: #ff8f4026;
+  --danger: #f07178;
+  --danger-soft: #f0717826;
+  --success: #aad94c;
+  --warning: #ffcc66;
+  --overlay: #05070a99;
+  --focus-ring: #39bae6;
+
+  --ev-blue: #39bae6;
+  --ev-blue-soft: #39bae626;
+  --ev-green: #aad94c;
+  --ev-green-soft: #aad94c26;
+  --ev-red: #f07178;
+  --ev-red-soft: #f0717826;
+  --ev-purple: #d2a6ff;
+  --ev-purple-soft: #d2a6ff26;
+  --ev-yellow: #e6b67d;
+  --ev-yellow-soft: #e6b67d26;
+  --ev-cyan: #95e6cb;
+  --ev-cyan-soft: #95e6cb26;
+  --ev-orange: #ff8f40;
+  --ev-orange-soft: #ff8f4026;
+  --ev-pink: #f28779;
+  --ev-pink-soft: #f2877926;
+
+  /* Dark: same structure, higher shadow alpha (design.md §3). */
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.45);
+  --shadow-2: 0 8px 28px rgba(0, 0, 0, 0.55);
+}
+
+/* Keep this block's values in sync with [data-theme='dark'] above. */
+@media (prefers-color-scheme: dark) {
+  [data-theme='auto'] {
+    color-scheme: dark;
+
+    --bg: #0b0e14;
+    --surface: #131721;
+    --surface-2: #1d222c;
+    --surface-3: #272d38;
+    --border: #262b36;
+    --border-strong: #3a4150;
+    --fg: #bfbdb6;
+    --fg-strong: #e6e1cf;
+    --muted: #6c7380;
+    --accent: #ff8f40;
+    --accent-fg: #0b0e14;
+    --accent-soft: #ff8f4026;
+    --danger: #f07178;
+    --danger-soft: #f0717826;
+    --success: #aad94c;
+    --warning: #ffcc66;
+    --overlay: #05070a99;
+    --focus-ring: #39bae6;
+
+    --ev-blue: #39bae6;
+    --ev-blue-soft: #39bae626;
+    --ev-green: #aad94c;
+    --ev-green-soft: #aad94c26;
+    --ev-red: #f07178;
+    --ev-red-soft: #f0717826;
+    --ev-purple: #d2a6ff;
+    --ev-purple-soft: #d2a6ff26;
+    --ev-yellow: #e6b67d;
+    --ev-yellow-soft: #e6b67d26;
+    --ev-cyan: #95e6cb;
+    --ev-cyan-soft: #95e6cb26;
+    --ev-orange: #ff8f40;
+    --ev-orange-soft: #ff8f4026;
+    --ev-pink: #f28779;
+    --ev-pink-soft: #f2877926;
+
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.45);
+    --shadow-2: 0 8px 28px rgba(0, 0, 0, 0.55);
+  }
+}
+
+/* --- Base layer (design.md §2, §6) --- */
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: 1.45;
+  /* All dates/times/durations align in grids (design.md §2). */
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: var(--accent-soft);
+  color: var(--fg-strong);
+}
+
+/* Subtle scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: var(--r-full);
+}
+
+/* Calendar toolbar strip (CalendarView): on touch Chromium the overlay
+   scrollbar is hidden, so clipped view chips gave no hint the row scrolls.
+   Pin a thin always-styled scrollbar and contain the horizontal gesture. */
+.fc-toolbar-scroll {
+  scrollbar-width: thin;
+  overscroll-behavior-x: contain;
+}
+.fc-toolbar-scroll::-webkit-scrollbar {
+  height: 3px;
+}
+.fc-toolbar-scroll::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: var(--r-full);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
+
+/* --- FullCalendar v6 remapping (CONTRACTS §5, design.md §4) ---
+   v6 injects its stylesheet at runtime (no CSS files ship in @fullcalendar/*@6),
+   landing AFTER this file. Color flows through the --fc-* custom properties below;
+   structural overrides double the .fc prefix so they win on specificity regardless
+   of injection order. */
+
+.fc {
+  --fc-page-bg-color: var(--bg);
+  --fc-neutral-bg-color: var(--surface-2);
+  --fc-neutral-text-color: var(--muted);
+  --fc-border-color: var(--border);
+  --fc-small-font-size: var(--text-xs);
+
+  --fc-button-bg-color: var(--surface);
+  --fc-button-border-color: var(--border);
+  --fc-button-text-color: var(--fg);
+  --fc-button-hover-bg-color: var(--surface-2);
+  --fc-button-hover-border-color: var(--border);
+  --fc-button-active-bg-color: var(--surface-3);
+  --fc-button-active-border-color: var(--border-strong);
+
+  --fc-event-bg-color: transparent;
+  --fc-event-border-color: transparent;
+  --fc-event-text-color: var(--fg-strong);
+  --fc-event-selected-overlay-color: var(--accent-soft);
+
+  --fc-more-link-bg-color: var(--surface-3);
+  --fc-more-link-text-color: var(--fg-strong);
+
+  --fc-highlight-color: var(--accent-soft);
+  --fc-today-bg-color: var(--accent-soft);
+  --fc-now-indicator-color: var(--accent);
+  --fc-non-business-color: color-mix(in srgb, var(--surface-2) 55%, transparent);
+
+  --fc-bg-event-color: var(--accent);
+  --fc-bg-event-opacity: 0.25;
+
+  --fc-list-event-hover-bg-color: var(--surface-2);
+  --fc-daygrid-event-dot-width: 6px;
+}
+
+/* We own all chrome; FullCalendar's own header/footer toolbars stay hidden. */
+.fc .fc-toolbar {
+  display: none;
+}
+
+/* Lookless buttons matching .btn (see app.css). */
+.fc .fc-button.fc-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: var(--r);
+  font-size: var(--text-sm);
+  /* Static Atkinson ships 400/700 only; 450 would silently render as 400. */
+  font-weight: 500;
+}
+.fc .fc-button.fc-button .fc-icon {
+  font-size: 14px;
+}
+/* Replace FullCalendar's dotted outline + glow focus rings with our focus ring. */
+.fc .fc-button.fc-button:focus,
+.fc .fc-button-primary.fc-button-primary:focus {
+  outline: 0;
+  box-shadow: none;
+}
+.fc .fc-button.fc-button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+/* Popovers (day-more, list overflow): our card language instead of raw shadows. */
+.fc .fc-popover.fc-popover {
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-1);
+  overflow: hidden;
+}
+
+/* Event pills (design.md §1): soft background + 3px solid left bar — never solid
+   fills. The solid --fc-event-* tokens are neutralized in the .fc block above;
+   each event carries its calendar color as --ev-c (eventDidMount, CalendarView).
+   Covers timeGrid pills, dayGrid all-day bars, and "+more" popover events —
+   all share .fc-event-main. */
+.fc .wycal-ev .fc-event-main {
+  padding: 2px 4px; /* text clears the 3px bar; FC default was 0 (design.md §1) */
+  background: color-mix(in srgb, var(--ev-c, var(--accent)) 16%, transparent);
+  border-left: 3px solid var(--ev-c, var(--accent));
+  border-radius: var(--r-sm);
+  color: var(--fg-strong);
+}
+
+/* Dot events share .fc-event-main (core renders it for every event) but sit
+   flush in the month cell — keep them unpadded. */
+.fc .wycal-ev .fc-daygrid-dot-event .fc-event-main {
+  padding: 0;
+}
+
+/* Pill text inherits fg-strong through .fc-event-main; keep it that way. */
+.fc .wycal-ev .fc-event-time,
+.fc .wycal-ev .fc-event-title {
+  color: var(--fg-strong);
+}
+
+/* Selected / focused (drag, resize, click): crisp outline in the event color.
+   FullCalendar's own overlay + box-shadow (--fc-event-selected-*) still apply. */
+.fc .fc-event-selected .fc-event-main,
+.fc .fc-event:focus .fc-event-main {
+  outline: 1px solid var(--ev-c, var(--accent));
+}
+
+/* Timed-event dots (dayGrid month view) and list-view dots: FullCalendar derives
+   them from --fc-event-border-color (now transparent); retint with the calendar
+   color. */
+.fc .wycal-ev .fc-daygrid-event-dot,
+.fc .wycal-ev .fc-list-event-dot {
+  border-color: var(--ev-c, var(--accent));
+}
+
+/* Short timed events (e.g. 15-min meetings at coarse zoom rungs) get FC's
+   fc-timegrid-event-short: ~14px tall, and FC's own short-event fill is
+   blanked by our theme, so the text renders bare on the grid. Wash the main
+   box with the event color and keep the 3px color bar so short pills stay
+   visible; FC sizes them, we only floor the height. */
+.fc .fc-timegrid-event-short.wycal-ev.wycal-ev .fc-event-main.fc-event-main {
+  background: color-mix(in srgb, var(--ev-c) 30%, transparent);
+  border-left: 3px solid var(--ev-c);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fc .fc-timegrid-event-short.wycal-ev.wycal-ev {
+  min-height: 14px;
+}
+
+/* Grid-view title truncation: FullCalendar only clips (overflow:hidden) and never
+   ellipsizes; fill that gap for timeGrid + dayGrid titles (list rows wrap freely,
+   so they stay untouched). */
+.fc .fc-timegrid-event .fc-event-title,
+.fc .fc-daygrid-event .fc-event-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Timed pills stack time above the title. FullCalendar flattens short (≤ 1-slot)
+   events onto one row (.fc-timegrid-event-short: flex-direction row + an
+   "09:30 - 10:00 -" ::after separator). With the end time hidden
+   (displayEventEnd=false), the inline row FITS again — so short pills keep
+   FullCalendar's single-row "09:30 Title…" layout (title would otherwise be
+   pushed out by the stacked frame), while taller pills stack. The separator is
+   dropped either way. Scoped to .fc-timegrid-event, so all-day bars
+   (fc-h-event), month-view dot events, and list rows keep single-line. */
+.fc .fc-timegrid-event {
+  overflow: hidden;
+}
+
+.fc .fc-timegrid-event .fc-event-main-frame {
+  flex-direction: column;
+  gap: 1px;
+}
+
+.fc .fc-timegrid-event-short .fc-event-main-frame {
+  flex-direction: row;
+  gap: 4px;
+  align-items: baseline;
+}
+
+.fc .fc-timegrid-event .fc-event-title-container {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.fc .fc-timegrid-event .fc-event-time {
+  flex-shrink: 0;
+  margin-bottom: 0;
+}
+
+.fc .fc-timegrid-event .fc-event-time::after {
+  content: none;
+}
+
+/* Current-time indicator (design.md §5): 1.5px accent line with an 8px round
+   dot on the time-axis edge (FullCalendar draws a triangle arrow). The
+   !important is deliberate: FC v6 injects its stylesheet at runtime and wins
+   equal-or-lower-specificity contests regardless of source order. */
+.fc .fc-timegrid-now-indicator-line.fc-timegrid-now-indicator-line {
+  border-top-width: 1.5px !important;
+}
+
+.fc .fc-timegrid-now-indicator-arrow.fc-timegrid-now-indicator-arrow {
+  top: -4px;
+  left: -4px;
+  width: 8px;
+  height: 8px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--fc-now-indicator-color);
+}
+
+/* Time-axis cushion ("all-day" label cell): FC lets it wrap at narrow widths
+   (mid-word break). No background paint — layout-only, tokens only. Doubled
+   class out-specifies FC's runtime-injected single-class rule. */
+.fc .fc-timegrid-axis-cushion.fc-timegrid-axis-cushion {
+  white-space: nowrap;
+}
+
+/* --- §9.1 Grid highlights are SQUARES (radius ≤ 2px, no circles in grids) ---
+   Month/multimonth today reads as a chip on the day number (--accent-soft bg,
+   --accent text), not a cell-wide tint — so drop FullCalendar's today fill on
+   dayGrid cells only (timeGrid now-column keeps --fc-today-bg-color).
+   Cells have ONE .fc ancestor (the calendar root), so selectors use a single
+   .fc prefix plus a doubled state class (.fc-day-today.fc-day-today) — strictly
+   out-specifying the single-prefix rules FullCalendar injects at runtime. */
+.fc .fc-daygrid-day.fc-day-today.fc-day-today {
+  background-color: transparent;
+}
+
+.fc .fc-daygrid-day.fc-day-today.fc-day-today .fc-daygrid-day-number {
+  border-radius: 2px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* Selected day(s) (selectable dateClick/drag render .fc-highlight): 1.5px
+   --accent outline square, on the td or the bg-fill layer v6 renders into. */
+.fc .fc-daygrid-day.fc-highlight.fc-highlight,
+.fc .fc-daygrid-day-bg .fc-highlight.fc-highlight {
+  border-radius: 2px;
+  background: transparent;
+  outline: 1.5px solid var(--accent);
+  outline-offset: -1.5px;
+}
+
+/* Week/2-week (and month) column headers: today reads as the same square chip
+   on the cushion link (--accent-soft bg, --accent text), not a whole-column
+   tint — the --fc-today-bg-color fill is dropped on header cells only, so the
+   timeGrid body's now-column tint is untouched. */
+.fc .fc-col-header-cell.fc-day-today.fc-day-today {
+  background-color: transparent;
+}
+
+.fc .fc-col-header-cell.fc-day-today.fc-day-today .fc-col-header-cell-cushion {
+  border-radius: 2px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* --- §10 Agenda (list) sticky day headers ---
+   FullCalendar sticks each agenda day row's cell (injected: `.fc
+   .fc-list-sticky .fc-list-day>*` → background: var(--fc-page-bg-color),
+   position: sticky, top: 0 — no z-index, no separator). Scrolled rows paint
+   over the bare cell, so the header reads as transparent text over content
+   (user report). Self-repeated-class override (design law): opaque --surface,
+   a hairline separator, and a small z-index so the header always paints above
+   event rows. The .fc-list-day-cushion inside keeps FullCalendar's solid
+   --fc-neutral-bg-color (= --surface-2) band and sticks with the th, so the
+   two-tone group header survives; td is covered defensively alongside th. */
+.fc .fc-list-sticky.fc-list-sticky .fc-list-day th,
+.fc .fc-list-sticky.fc-list-sticky .fc-list-day td {
+  z-index: 1;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+/* --- §11 Density/comfort pass (user: "UI quite cramped") ---
+   Atkinson Hyperlegible runs wider than Inter and FullCalendar's defaults are
+   tighter than comfortable: agenda rows get 10px vertical (FC: 8px), month-view
+   dot rows 4px vertical (FC: 2px). Event-pill text breathes via the 2px 4px
+   padding on .wycal-ev .fc-event-main above; pill radius stays --r-sm per
+   design.md §3. Self-repeated classes out-specify the injected single-prefix
+   rules regardless of runtime injection order. */
+.fc .fc-list-table.fc-list-table td {
+  padding: 10px 14px;
+}
+
+.fc .fc-daygrid-dot-event.fc-daygrid-dot-event {
+  padding: 4px 0;
+}
+
+/* --- §24 Compact grid pass --- FullCalendar's structural defaults are
+   tighter than comfortable, but the earlier comfort inflations made the grid
+   too big (user: "too big and overflows"), so the floors sit just above the
+   pill content height and the time rungs shrink a notch (FC default
+   .fc-timegrid-slot height 1.5em → 1.4em). Self-repeated classes out-specify
+   the injected single-prefix rules regardless of runtime injection order;
+   colors keep flowing through tokens; nothing forces a cell to overflow:
+   dayMaxEvents + eventMaxStack 4 cap month-cell rows behind '+N more', bars
+   are harness-widthed with ellipsized titles, and every floor here is a
+   max()/min-height that only lifts near-empty cells. */
+.fc .fc-daygrid-day-frame.fc-daygrid-day-frame {
+  /* All-day lane rows (and month cells, already taller): 24px floor. */
+  min-height: max(100%, 24px);
+}
+
+/* All-day lane keeps a slim drop target even on days with no all-day items
+   (month cells included — they are far taller than 24px in practice). */
+.fc .fc-daygrid-day-events.fc-daygrid-day-events {
+  min-height: 24px;
+}
+
+/* All-day bar pills (fc-h-event is dayGrid-only; timeGrid events never carry
+   it): 20px floor ≈ one text line + the 2px 4px padding, back from the
+   oversized comfort pass. Rows stay capped by '+N more', so the floor can
+   never push a cell past its row. */
+.fc .fc-h-event.fc-h-event {
+  min-height: 20px;
+}
+
+/* Time rungs: one notch tighter than FC's 1.5em default so the day column
+   loses ~7% height per hour without clipping labels. */
+.fc .fc-timegrid-slot.fc-timegrid-slot {
+  height: 1.4em;
+}
+
+.fc .fc-daygrid-day-number.fc-daygrid-day-number {
+  font-size: 0.875rem;
+}
+
+.fc .fc-col-header-cell-cushion.fc-col-header-cell-cushion {
+  padding: 4px 6px;
+}
+
+/* --- §25 Sidebar edge drag handle: mounted by CalendarView as a
+   body-level fixed element positioned off the aside's right edge — the aside
+   is md:static + overflow-hidden, so a fixed child of <body> is the least
+   invasive mount point (Sidebar.tsx untouched). off-screen until positioned. */
+.wycal-sidebar-handle {
+  position: fixed;
+  top: 0;
+  left: -100px;
+  width: 6px;
+  height: 100%;
+  z-index: 45;
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
+}
+
+.wycal-sidebar-handle:hover,
+.wycal-sidebar-handle.wycal-dragging {
+  background: var(--accent-soft);
+}
+
+/* ── Mobile calendar chrome (<768px): fixed bottom action bar + view sheet
+   (CalendarView). Desktop ≥768px renders none of this: the bar is display:none
+   outside the media query (these unlayered rules beat Tailwind utilities, so
+   hiding must not rely on md:hidden alone). ── */
+
+.wycal-mobile-bar {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  /* Reserve space under the calendar grid so the fixed 56px (+ safe area)
+     bar never covers the last row. */
+  .wycal-stage-wrap {
+    padding-bottom: 64px;
+  }
+
+  /* Bottom action bar: ‹ · Today · ＋ new · View · ›, five even slots. */
+  .wycal-mobile-bar {
+    position: fixed;
+    inset-inline: 0;
+    bottom: 0;
+    z-index: 40;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    place-items: center;
+    height: calc(56px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    border-top: 1px solid var(--border);
+    background: color-mix(in srgb, var(--surface) 88%, transparent);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+  }
+
+  /* Center FAB: 48px accent circle — 'New event', same openEditor create
+     path as the sidebar button. */
+  .wycal-fab {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+    border: 0;
+    border-radius: var(--r-full);
+    background: var(--accent);
+    color: var(--accent-fg);
+    cursor: pointer;
+    box-shadow: var(--shadow-1);
+  }
+  .wycal-fab:active {
+    filter: brightness(0.95);
+  }
+
+  /* View/zoom sheet popped above the bar; .card supplies the fill, hairline
+     and radius — this trims its padding and lifts it over the bar. */
+  .wycal-view-sheet {
+    position: absolute;
+    inset-inline: 8px;
+    bottom: calc(100% + 8px);
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 10px;
+    box-shadow: var(--shadow-2);
+  }
+}

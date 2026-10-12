@@ -1,0 +1,12 @@
+BEGIN:VCARD
+VERSION:4.0
+UID:admin-501@wycal
+FN:Jamie Rivera
+REV:2026-10-10T18:27:32Z
+N:Rivera;Jamie;;;
+ORG:wycal fixture
+TITLE:Local admin
+EMAIL;TYPE=work:jamie.rivera@example.com
+TEL;TYPE=work:+1 555 0201
+BDAY:1990-06-15
+END:VCARD

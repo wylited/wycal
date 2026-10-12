@@ -1,0 +1,11 @@
+BEGIN:VCARD
+VERSION:4.0
+UID:admin-502@wycal
+FN:Riley Chen
+REV:2026-10-10T18:27:32Z
+N:Chen;Riley;;;
+ORG:wycal fixture
+TITLE:Second contact
+EMAIL;TYPE=work:riley.chen@example.com
+TEL;TYPE=home:+1 555 0202
+END:VCARD
