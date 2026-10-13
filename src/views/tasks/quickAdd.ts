@@ -53,6 +53,21 @@ export interface QuickAddDue {
   allDay: boolean
 }
 
+/**
+ * One consumed NL token: where it sat in the ORIGINAL input line (absolute
+ * [start, end) offsets) and what it parsed as. The command palette renders
+ * these as highlighted live-preview chips (command/nl.ts interpret()); the
+ * existing parseQuickAdd/parseQuickAddLine results are unchanged apart from
+ * the additive `chips` on the line pass.
+ */
+export interface ParsedChip {
+  start: number
+  end: number
+  /** The literal consumed text, e.g. 'next fri' or 'for 45m'. */
+  text: string
+  kind: 'date' | 'time' | 'duration' | 'priority' | 'tag'
+}
+
 /** One parsed quick-add (token pass): the todo-shaped fields TasksView uses. */
 export interface ParsedQuickAdd {
   summary: string
@@ -77,6 +92,8 @@ export interface ParsedQuickAddLine {
   allDay: boolean
   priority?: 1 | 5 | 9
   tags: string[]
+  /** Consumed tokens in the caller's input coordinates (see ParsedChip). */
+  chips: ParsedChip[]
 }
 
 const MONTHS: Record<string, number> = {
@@ -137,10 +154,18 @@ interface TokenPass {
   /** A wall-time token matched (the due, else today, became timed). */
   hadTime: boolean
   durationMinutes?: number
+  /** Consumed tokens in the caller's input coordinates, stripping order. */
+  chips: ParsedChip[]
 }
 
-function parseTokens(input: string, durations: boolean): TokenPass {
-  let summary = input
+function parseTokens(input: string, durations: boolean, skip = 0): TokenPass {
+  // A forced-kind prefix (skip > 0) is blanked rather than sliced away so
+  // every chip offset below stays valid against the caller's full input.
+  let summary = skip > 0 ? ' '.repeat(skip) + input.slice(skip) : input
+  // offsets[i] = index in the caller's input of summary[i]; strip() keeps it
+  // in sync as tokens are consumed (the palette's chip ranges read it).
+  let offsets: number[] = Array.from(input, (_, i) => i)
+  const chips: ParsedChip[] = []
   let dateText = ''
   let timeText = ''
   let due: QuickAddDue | undefined
@@ -151,13 +176,34 @@ function parseTokens(input: string, durations: boolean): TokenPass {
   /**
    * Remove every `re` match from the working summary, handing each match
    * (m[0] whole, m[1…] groups) to `on`; a `false` return rejects the match
-   * and leaves its text in place.
+   * and leaves its text in place. Accepted matches are recorded as chips of
+   * `kind` with caller-input coordinates.
    */
-  function strip(re: RegExp, on: (m: string[]) => boolean): void {
-    summary = summary.replace(re, (...args: unknown[]) => {
-      const m = args.slice(0, -2) as string[] // drop replace's (offset, string)
-      return on(m) ? ' ' : (m[0] as string)
-    })
+  function strip(re: RegExp, on: (m: string[]) => boolean, kind: ParsedChip['kind']): void {
+    const global = re.global ? re : new RegExp(re.source, `${re.flags}g`)
+    // Collect first, then rewrite in one pass — String.replace would hand
+    // every callback the same pre-strip string, and the offset map must be
+    // rebuilt per accepted hit against that same working string anyway.
+    const hits: { index: number; len: number; text: string; m: string[] }[] = []
+    for (let h = global.exec(summary); h !== null; h = global.exec(summary)) {
+      const m = h.slice() as string[]
+      if (on(m)) hits.push({ index: h.index, len: h[0].length, text: h[0], m })
+    }
+    if (hits.length === 0) return
+    let out = ''
+    const outOffsets: number[] = []
+    let cursor = 0
+    for (const hit of hits) {
+      out += summary.slice(cursor, hit.index) + ' '
+      for (let i = cursor; i < hit.index; i++) outOffsets.push(offsets[i])
+      outOffsets.push(offsets[hit.index])
+      chips.push({ start: offsets[hit.index], end: offsets[hit.index + hit.len - 1] + 1, text: hit.text, kind })
+      cursor = hit.index + hit.len
+    }
+    out += summary.slice(cursor)
+    for (let i = cursor; i < offsets.length; i++) outOffsets.push(offsets[i])
+    summary = out
+    offsets = outOffsets
   }
 
   /** All-day due N days out (huge N rolls past the Date range → rejected). */
@@ -201,28 +247,28 @@ function parseTokens(input: string, durations: boolean): TokenPass {
     const letter = (m[1] as string).toLowerCase()
     priority = letter === 'a' ? 1 : letter === 'b' ? 5 : 9
     return true
-  })
+  }, 'priority')
   strip(/!p([123])\b/gi, (m) => {
     priority = m[1] === '1' ? 1 : m[1] === '2' ? 5 : 9
     return true
-  })
+  }, 'priority')
 
   // '+tag' tokens → tags; a leading letter keeps '+1d' and friends as text.
   strip(/\+([A-Za-z][\w-]*)/g, (m) => {
     const tag = m[1] as string
     if (!tags.includes(tag)) tags.push(tag)
     return true
-  })
+  }, 'tag')
 
   // 'in 3 days' / 'in 2 weeks' / 'in 5d'.
   strip(/\bin\s+(\d{1,3})\s*(d|day|days|w|week|weeks)\b/gi, (m) => {
     const n = Number(m[1])
     const unit = (m[2] as string).toLowerCase()
     return inDays(unit.startsWith('w') ? n * 7 : n, m[0] as string)
-  })
+  }, 'date')
 
   // 'today'/'tod'/'tomorrow'/'tom'/'tmr'.
-  strip(/\b(today|tod|tomorrow|tom|tmr)\b/gi, (m) => inDays(/^(today|tod)$/i.test(m[1] as string) ? 0 : 1, m[0] as string))
+  strip(/\b(today|tod|tomorrow|tom|tmr)\b/gi, (m) => inDays(/^(today|tod)$/i.test(m[1] as string) ? 0 : 1, m[0] as string), 'date')
 
   // Weekdays, bare or 'next'-prefixed (full names listed before abbreviations).
   strip(
@@ -234,31 +280,32 @@ function parseTokens(input: string, durations: boolean): TokenPass {
       due = d
       return true
     },
+    'date',
   )
 
   // '10/24' — month/day this year.
-  strip(/\b(\d{1,2})\/(\d{1,2})\b/g, (m) => onDate(Number(m[1]), Number(m[2]), m[0] as string))
+  strip(/\b(\d{1,2})\/(\d{1,2})\b/g, (m) => onDate(Number(m[1]), Number(m[2]), m[0] as string), 'date')
 
   // 'oct 24' / 'oct 24th' …
   strip(
     /\b(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sept|sep|oct|nov|dec)\.?\s+(\d{1,2})(?:st|nd|rd|th)?\b/gi,
     (m) => onDate(MONTHS[(m[1] as string).toLowerCase()], Number(m[2]), m[0] as string),
+    'date',
   )
 
   // … and '24 oct' / '24th oct'.
   strip(
     /\b(\d{1,2})(?:st|nd|rd|th)?\s+(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sept|sep|oct|nov|dec)\b/gi,
     (m) => onDate(MONTHS[(m[2] as string).toLowerCase()], Number(m[1]), m[0] as string),
+    'date',
   )
 
   // Times, 24h first ('17:00', 'at 9:15'), then 12h ('at 5pm', '5:30pm') —
   // both merge into the matched date and make the due timed.
   strip(/\b(?:at\s+)?(\d{1,2}):(\d{2})\s*(am|pm)?\b/gi, (m) =>
-    atTime(Number(m[1]), Number(m[2]), m[3] !== undefined ? ((m[3] as string).toLowerCase() as 'am' | 'pm') : undefined, m[0] as string),
-  )
+    atTime(Number(m[1]), Number(m[2]), m[3] !== undefined ? ((m[3] as string).toLowerCase() as 'am' | 'pm') : undefined, m[0] as string), 'time')
   strip(/\b(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/gi, (m) =>
-    atTime(Number(m[1]), m[2] === undefined ? 0 : Number(m[2]), (m[3] as string).toLowerCase() as 'am' | 'pm', m[0] as string),
-  )
+    atTime(Number(m[1]), m[2] === undefined ? 0 : Number(m[2]), (m[3] as string).toLowerCase() as 'am' | 'pm', m[0] as string), 'time')
 
   // Durations ('1h', '1h30m', '2 hours', '30m', '90 min', 'for 45m') — hours
   // forms first so they can't be half-eaten by the bare-minutes form; 'for N
@@ -272,7 +319,7 @@ function parseTokens(input: string, durations: boolean): TokenPass {
       if (h > 23 || min > 59 || mins === 0 || mins > 24 * 60) return false
       durationMinutes = mins
       return true
-    })
+    }, 'duration')
     // '1h30' / '2 hours 30' — trailing minutes with no unit (the form above
     // needs one, so its \b would reject these; runs after it, so '1h30m' is
     // already gone).
@@ -283,13 +330,13 @@ function parseTokens(input: string, durations: boolean): TokenPass {
       if (h > 23 || min > 59 || mins === 0 || mins > 24 * 60) return false
       durationMinutes = mins
       return true
-    })
+    }, 'duration')
     strip(/\b(?:for\s+)?(\d{1,3})\s*(?:minutes?|mins?|m)\b/gi, (m) => {
       const mins = Number(m[1])
       if (mins === 0 || mins > 24 * 60) return false
       durationMinutes = mins
       return true
-    })
+    }, 'duration')
   }
 
   if (due !== undefined) due.text = [dateText, timeText].filter((t) => t !== '').join(' ')
@@ -301,7 +348,7 @@ function parseTokens(input: string, durations: boolean): TokenPass {
     .replace(/^[,;:.\s]+/, '')
     .replace(/[,;:\s]+$/, '')
     .trim()
-  return { summary, due, priority, tags, hadTime: timeText !== '', durationMinutes }
+  return { summary, due, priority, tags, hadTime: timeText !== '', durationMinutes, chips }
 }
 
 /** Forced-kind prefixes: 'todo:'/'task:' → todo, 'event:'/'meet:'/'meeting:'
@@ -314,17 +361,18 @@ const FORCED_PREFIX = /^\s*(todo|task|event|meet|meeting)\s*:/i
  * implies a timed EVENT (weekday + time pairs land here too), a date-only
  * match or nothing implies a TODO. All todo tokens (dates, times, priorities,
  * +tags) behave exactly as in parseQuickAdd; the summary comes back with
- * every recognized token stripped.
+ * every recognized token stripped, and `chips` records each consumed token's
+ * span in the caller's input coordinates (command/nl.ts live preview).
  */
 export function parseQuickAddLine(input: string): ParsedQuickAddLine {
-  let rest = input
   let forced: QuickAddKind | undefined
-  const m = FORCED_PREFIX.exec(rest)
+  const m = FORCED_PREFIX.exec(input)
   if (m !== null) {
     forced = /^(todo|task)$/i.test(m[1]) ? 'todo' : 'event'
-    rest = rest.slice(m[0].length)
   }
-  const t = parseTokens(rest, true)
+  // The forced prefix is blanked inside parseTokens (skip), so chip offsets
+  // stay valid against the full input line.
+  const t = parseTokens(input, true, m === null ? 0 : m[0].length)
   return {
     kind: forced ?? (t.hadTime || t.durationMinutes !== undefined ? 'event' : 'todo'),
     summary: t.summary,
@@ -333,5 +381,6 @@ export function parseQuickAddLine(input: string): ParsedQuickAddLine {
     allDay: t.due?.allDay ?? true,
     priority: t.priority,
     tags: t.tags,
+    chips: t.chips,
   }
 }

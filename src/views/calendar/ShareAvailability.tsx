@@ -9,8 +9,6 @@
  * Shared Modal provides the dialog gate, Esc, backdrop and focus trap.
  */
 import { occurrences } from '../../stores/events';
-import type { EventRecord } from '../../stores/events';
-import { isCalendarVisible } from '../../stores/calendars';
 import { icsDateToDate } from '../../lib/ics/types';
 import { addDays } from '../../lib/util/date';
 import { Modal } from '../../ui/Modal';
@@ -54,8 +52,8 @@ function dayLabel(d: Date): string {
 
 /**
  * Free ranges per day for the next DAY_COUNT days. Uses occurrences() with
- * the same {start,end} ISO range args as every other caller; visibility is
- * gated with isCalendarVisible like useCalendarEvents.
+ * the same {start,end} ISO range args as every other caller; it already gates
+ * on schedule-domain visibility (the availability share is schedule-mode).
  */
 function computeAvailability(now: Date): DayAvailability[] {
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -64,7 +62,6 @@ function computeAvailability(now: Date): DayAvailability[] {
     start: today.toISOString(),
     end: windowEnd.toISOString(),
   })
-    .filter((rec: EventRecord) => isCalendarVisible(rec.calendarUrl))
     .map((rec) => ({
       start: icsDateToDate(rec.data.start).getTime(),
       end: icsDateToDate(rec.data.end).getTime(),

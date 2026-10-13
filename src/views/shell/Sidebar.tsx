@@ -19,6 +19,7 @@ import {
   collections,
   isCalendarVisible,
   toggleCalendar,
+  type VisibilityDomain,
 } from '../../stores/calendars';
 import { prefs, setPrefs } from '../../stores/prefs';
 import { allAgendaTags, agendaFilters, clearAgendaTags, setAgendaPriority, setAgendaStatus, toggleAgendaTag } from '../../stores/agendaFilters';
@@ -717,6 +718,10 @@ export function Sidebar(props: { open: boolean; onClose: () => void }) {
     });
   }
   if (mode !== 'contacts') {
+    // §nav-revamp: each mode's Calendars section drives its OWN visibility
+    // domain (stores/calendars.ts) — toggling a calendar here never moves
+    // the other mode's set; both persist independently.
+    const visDomain: VisibilityDomain = mode === 'agenda' ? 'agenda' : 'schedule';
     sections.push({
       id: SECTION.calendars,
       label: 'Calendars',
@@ -747,8 +752,8 @@ export function Sidebar(props: { open: boolean; onClose: () => void }) {
                   <input
                     type="checkbox"
                     class="size-3.5 shrink-0 accent-accent"
-                    checked={isCalendarVisible(cal.url)}
-                    onChange={() => toggleCalendar(cal.url)}
+                    checked={isCalendarVisible(cal.url, visDomain)}
+                    onChange={() => toggleCalendar(cal.url, visDomain)}
                     aria-label={`Show ${cal.name}`}
                     title={`Show ${cal.name} (${i + 1})`}
                   />

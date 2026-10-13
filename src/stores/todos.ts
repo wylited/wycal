@@ -402,16 +402,17 @@ function hasDateWithinNextDays(td: IcsTodo, fromMs: number, untilMs: number): bo
 /**
  * Incomplete, top-level (no RELATED-TO), stuck-projects approximation
  * (CONTRACTS §12, fixed law): no incomplete children, and no dtstart/due
- * within the next 7 days. Visible calendars only; reads `todos`, `revision`
- * and the calendars visibility signals, so callers tracking signals re-run
- * when any of them change.
+ * within the next 7 days. Schedule-domain visible calendars only (its
+ * consumer is the search corpus); reads `todos`, `revision` and the calendars
+ * visibility signals, so callers tracking signals re-run when any of them
+ * change.
  */
 export function stuckTopLevel(): TodoRecord[] {
   const now = Date.now()
   const horizon = now + 7 * DAY_MS
   const out: TodoRecord[] = []
   for (const rec of todos.value.values()) {
-    if (!isCalendarVisible(rec.calendarUrl)) continue
+    if (!isCalendarVisible(rec.calendarUrl, 'schedule')) continue
     const td = rec.data
     if (isTodoDone(td)) continue
     if (td.relatedTo) continue

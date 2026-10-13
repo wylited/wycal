@@ -172,6 +172,8 @@ export function ContactEditor(props: {
   record: ContactRecord | null
   /** Addressbook collection URL for createContact (create mode). */
   addressbookUrl: string
+  /** Command-palette contact candidate (create mode): seeds fn/email/tel. */
+  initial?: { fn: string; email?: string; tel?: string }
   onClose: () => void
 }) {
   const [form, setForm] = useState<ContactForm>(blankForm)
@@ -182,7 +184,17 @@ export function ContactEditor(props: {
   // Re-seed the form each time the modal opens for a given target.
   useEffect(() => {
     if (!props.open) return
-    setForm(formFromVcard(props.record?.data))
+    if (props.record === null && props.initial) {
+      const seed = blankForm()
+      setForm({
+        ...seed,
+        fn: props.initial.fn,
+        emails: props.initial.email ? [{ value: props.initial.email, types: [] }] : seed.emails,
+        tels: props.initial.tel ? [{ value: props.initial.tel, types: [] }] : seed.tels,
+      })
+    } else {
+      setForm(formFromVcard(props.record?.data))
+    }
     setFnInvalid(false)
     setConfirmDelete(false)
     setBusy(false)

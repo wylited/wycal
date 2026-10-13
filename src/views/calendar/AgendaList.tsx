@@ -3,8 +3,10 @@
  * Agenda view list (§agenda): the 'agenda' hash view renders this instead of
  * the FullCalendar host. Same data path as the listAgenda feed in
  * ./useCalendarEvents — occurrences() over the loaded window + todo records
- * of visible calendars, ` (CalendarName)` attribution suffix included —
- * grouped org-super-agenda style. The window is INFINITE: it starts at
+ * of agenda-visible calendars (the agenda's own visibility domain, disjoint
+ * from the schedule grid's — stores/calendars.ts), ` (CalendarName)`
+ * attribution suffix included — grouped org-super-agenda style. The window is
+ * INFINITE: it starts at
  * CalendarView's initial 14 days and grows +14d whenever the bottom sentinel
  * nears the viewport (no range chips). Grouping (Day|Calendar) lives in the
  * toolbar/bottom-bar toggle; todo/event filtering power lives in the sidebar
@@ -218,7 +220,7 @@ export function AgendaList(props: AgendaListProps) {
   // Search filters events exactly like useCalendarEvents: title/location/
   // description, case-insensitive, before the (CalendarName) suffix matters.
   const q = props.search.trim().toLowerCase()
-  let events = showEvents ? occurrences({ start: today.toISOString(), end: end.toISOString() }) : []
+  let events = showEvents ? occurrences({ start: today.toISOString(), end: end.toISOString() }, 'agenda') : []
   if (q) {
     events = events.filter((rec) => {
       const d = rec.data
@@ -231,7 +233,7 @@ export function AgendaList(props: AgendaListProps) {
   }
   const todoRecs: TodoRecord[] = []
   if (props.showTodos) {
-    for (const rec of todos.value.values()) if (isCalendarVisible(rec.calendarUrl)) todoRecs.push(rec)
+    for (const rec of todos.value.values()) if (isCalendarVisible(rec.calendarUrl, 'agenda')) todoRecs.push(rec)
   }
   const calInfo = (url: string) => {
     const c = collections.value.find((c) => c.url === url)
@@ -245,7 +247,7 @@ export function AgendaList(props: AgendaListProps) {
   // prefs.calendarOrder (persisted via setPrefs). Repeated dragover on the
   // same pair no-ops — after the swap the hovered header IS the dragged one.
   const calUrls = collections.value
-    .filter((c) => c.kind === 'calendar' && isCalendarVisible(c.url))
+    .filter((c) => c.kind === 'calendar' && isCalendarVisible(c.url, 'agenda'))
     .map((c) => c.url)
   const dragUrl = useRef<string | null>(null)
   const swapCalOrder = (target: string): void => {

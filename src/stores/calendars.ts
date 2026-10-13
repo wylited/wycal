@@ -1,21 +1,33 @@
 /**
  * Calendar-collection store (CONTRACTS §4).
  *
- * Visibility rules: a collection's state is either visible or hidden. The
- * visible URL set is persisted under `wycal.visible` (as the contract
- * requires); a companion `wycal.hidden` set records explicit hides so that a
- * hidden calendar does not come back as "newly discovered → default visible"
- * after a reload. Collections never seen before default to visible on first
- * discovery (spec).
+ * Visibility rules: visibility is PER MODE (§nav-revamp) — the schedule grid
+ * and the agenda list each gate their content with an independent domain
+ * ('schedule' | 'agenda'), so toggling a calendar off in the agenda sidebar
+ * leaves it on in the schedule grid and vice versa. Each domain keeps a
+ * visible URL set (schedule: `wycal.visible`, agenda: `wycal.agenda.visible`)
+ * plus a companion explicit-hide set (`wycal.hidden` / `wycal.agenda.hidden`)
+ * so that a hidden calendar does not come back as "newly discovered → default
+ * visible" after a reload. Collections never seen before default to visible
+ * on first discovery in every domain (spec): the schedule domain keeps the
+ * original storage keys, so pre-split persisted sets seed it as-is, while the
+ * agenda domain starts empty and therefore defaults to all-visible.
  */
-import { computed, signal } from '@preact/signals'
+import { computed, signal, type Signal } from '@preact/signals'
 import type { DavCollection } from '../lib/caldav/types'
 import { clientForCollection, httpStatus, requestSync } from '../lib/sync/engine'
 import { EVENT_COLORS } from '../lib/util/colors'
 import { push } from './toasts'
 
-const VISIBLE_STORAGE_KEY = 'wycal.visible'
-const HIDDEN_STORAGE_KEY = 'wycal.hidden'
+export type VisibilityDomain = 'schedule' | 'agenda'
+
+/** Per-domain storage keys; the schedule domain keeps the original keys, so
+ * pre-split persisted sets seed it as-is (the agenda domain starts empty =
+ * all visible). */
+const STORAGE_KEYS: Record<VisibilityDomain, { visible: string; hidden: string }> = {
+  schedule: { visible: 'wycal.visible', hidden: 'wycal.hidden' },
+  agenda: { visible: 'wycal.agenda.visible', hidden: 'wycal.agenda.hidden' },
+}
 
 function loadSet(key: string): Set<string> {
   if (typeof localStorage === 'undefined') return new Set()
@@ -30,11 +42,12 @@ function loadSet(key: string): Set<string> {
   }
 }
 
-function persistSets(): void {
+function persist(domain: VisibilityDomain): void {
   if (typeof localStorage === 'undefined') return
+  const d = domains[domain]
   try {
-    localStorage.setItem(VISIBLE_STORAGE_KEY, JSON.stringify([...visibleUrls.value]))
-    localStorage.setItem(HIDDEN_STORAGE_KEY, JSON.stringify([...hiddenUrls.value]))
+    localStorage.setItem(STORAGE_KEYS[domain].visible, JSON.stringify([...d.visible.value]))
+    localStorage.setItem(STORAGE_KEYS[domain].hidden, JSON.stringify([...d.hidden.value]))
   } catch (err) {
     console.warn('wycal: could not persist calendar visibility', err)
   }
@@ -43,43 +56,64 @@ function persistSets(): void {
 /** All discovered collections (calendars + addressbooks), engine-populated. */
 export const collections = signal<DavCollection[]>([])
 
-const visibleUrls = signal<Set<string>>(loadSet(VISIBLE_STORAGE_KEY))
-const hiddenUrls = signal<Set<string>>(loadSet(HIDDEN_STORAGE_KEY))
+/** Independent per-mode visibility state: each domain gates its own views
+ * with its own sets, persisted under its own keys. */
+const domains: Record<VisibilityDomain, { visible: Signal<Set<string>>; hidden: Signal<Set<string>> }> = {
+  schedule: {
+    visible: signal(loadSet(STORAGE_KEYS.schedule.visible)),
+    hidden: signal(loadSet(STORAGE_KEYS.schedule.hidden)),
+  },
+  agenda: {
+    visible: signal(loadSet(STORAGE_KEYS.agenda.visible)),
+    hidden: signal(loadSet(STORAGE_KEYS.agenda.hidden)),
+  },
+}
 
-/** Bumped whenever visibility membership changes (refetch signal for feeds;
- * the events store's occurrence buckets deliberately do NOT key on it). */
+/** Bumped whenever visibility membership changes in ANY domain (refetch
+ * signal for feeds; the events store's occurrence buckets deliberately do
+ * NOT key on it). */
 export const visibilityVersion = signal(0)
 
-/** Set of visible collection URLs (persisted 'wycal.visible'). */
-export const visibleCalendars = computed<ReadonlySet<string>>(() => new Set(visibleUrls.value))
-
-/** Visible collection records, for sidebar/lists. */
-export const visibleCollections = computed<DavCollection[]>(() =>
-  collections.value.filter((c) => visibleUrls.value.has(c.url)),
+/** Schedule-domain visible URL set (search corpus + editor pickers read it;
+ * agenda-side code asks `isCalendarVisible(url, 'agenda')` instead). */
+export const visibleCalendars = computed<ReadonlySet<string>>(
+  () => new Set(domains.schedule.visible.value),
 )
 
-export function isCalendarVisible(url: string): boolean {
-  return visibleUrls.value.has(url)
+/** Schedule-domain visible collection records, for editor pickers. */
+export const visibleCollections = computed<DavCollection[]>(() =>
+  collections.value.filter((c) => domains.schedule.visible.value.has(c.url)),
+)
+
+/** A collection's visibility in one domain ('schedule' by default). */
+export function isCalendarVisible(url: string, domain: VisibilityDomain = 'schedule'): boolean {
+  return domains[domain].visible.value.has(url)
 }
 
 /**
  * Replace the collection list after discovery. URLs never seen before become
- * visible (unless explicitly hidden); explicitly hidden ones stay hidden.
+ * visible (unless explicitly hidden) in EVERY domain; explicitly hidden ones
+ * stay hidden — so a fresh domain starts all-visible (spec).
  */
 export function registerCollections(cols: DavCollection[]): void {
   let changed = false
-  const visible = new Set(visibleUrls.value)
-  for (const c of cols) {
-    if (hiddenUrls.value.has(c.url) || visible.has(c.url)) continue
-    visible.add(c.url)
-    changed = true
+  for (const domain of ['schedule', 'agenda'] as const) {
+    const d = domains[domain]
+    const visible = new Set(d.visible.value)
+    let domainChanged = false
+    for (const c of cols) {
+      if (d.hidden.value.has(c.url) || visible.has(c.url)) continue
+      visible.add(c.url)
+      domainChanged = true
+    }
+    if (domainChanged) {
+      d.visible.value = visible
+      persist(domain)
+      changed = true
+    }
   }
   collections.value = cols
-  if (changed) {
-    visibleUrls.value = visible
-    persistSets()
-    visibilityVersion.value++
-  }
+  if (changed) visibilityVersion.value++
 }
 
 /** Forget collections (engine calls this when an account is removed). */
@@ -88,41 +122,50 @@ export function dropCollections(urls: ReadonlySet<string>): void {
   collections.value = collections.value.filter((c) => !urls.has(c.url))
 }
 
-/** Toggle a collection's visibility and persist. */
-export function toggleCalendar(url: string): void {
-  const visible = new Set(visibleUrls.value)
-  const hidden = new Set(hiddenUrls.value)
-  if (visible.has(url)) {
-    visible.delete(url)
-    hidden.add(url)
-  } else {
+/** Set one collection's visibility in a domain and persist. */
+export function setVisible(domain: VisibilityDomain, url: string, on: boolean): void {
+  const d = domains[domain]
+  if (on === d.visible.value.has(url)) return
+  const visible = new Set(d.visible.value)
+  const hidden = new Set(d.hidden.value)
+  if (on) {
     visible.add(url)
     hidden.delete(url)
+  } else {
+    visible.delete(url)
+    hidden.add(url)
   }
-  visibleUrls.value = visible
-  hiddenUrls.value = hidden
-  persistSets()
+  d.visible.value = visible
+  d.hidden.value = hidden
+  persist(domain)
   visibilityVersion.value++
 }
 
+/** Toggle a collection's visibility in a domain and persist. */
+export function toggleCalendar(url: string, domain: VisibilityDomain = 'schedule'): void {
+  setVisible(domain, url, !domains[domain].visible.value.has(url))
+}
+
 /**
- * Replace visibility wholesale from an explicit visible-URL set (saved views
- * V2 apply): collections not in the set become explicitly hidden so they
- * neither render nor resurface as "newly discovered" after a reload.
+ * Replace a domain's visibility wholesale from an explicit visible-URL set
+ * (saved views V2 apply, schedule domain): collections not in the set become
+ * explicitly hidden so they neither render nor resurface as "newly
+ * discovered" after a reload.
  */
-export function setVisibility(urls: ReadonlySet<string>): void {
+export function applyVisibility(domain: VisibilityDomain, urls: ReadonlySet<string>): void {
   const visible = new Set<string>()
   const hidden = new Set<string>()
   for (const c of collections.value) {
     if (urls.has(c.url)) visible.add(c.url)
     else hidden.add(c.url)
   }
+  const d = domains[domain]
   const sameAs = (a: ReadonlySet<string>, b: ReadonlySet<string>): boolean =>
     a.size === b.size && [...a].every((u) => b.has(u))
-  if (sameAs(visible, visibleUrls.value) && sameAs(hidden, hiddenUrls.value)) return
-  visibleUrls.value = visible
-  hiddenUrls.value = hidden
-  persistSets()
+  if (sameAs(visible, d.visible.value) && sameAs(hidden, d.hidden.value)) return
+  d.visible.value = visible
+  d.hidden.value = hidden
+  persist(domain)
   visibilityVersion.value++
 }
 

@@ -1,9 +1,9 @@
 /** @jsxImportSource preact */
 /**
  * Global header chrome (design.md §4, §nav-revamp): 48px row with menu button
- * (mobile drawer), the [Schedule | Agenda | Contacts] mode switcher bound to
- * the hash (schedule restores prefs.lastScheduleView, default week; agenda is
- * `#/?view=agenda`; contacts is `#/contacts`), wycal wordmark, spacer, theme
+ * (mobile drawer), wycal wordmark, spacer, the [Schedule | Agenda | Contacts]
+ * mode switcher bound to the hash (schedule restores prefs.lastScheduleView,
+ * default week; agenda is `#/?view=agenda`; contacts is `#/contacts`), theme
  * toggle (light → dark → auto, persisted via the prefs store), settings link,
  * and the `?` keyboard-shortcuts button.
  * Search lives at the top of the sidebar now (SidebarSearch); '/' and ⌘K are
@@ -83,6 +83,15 @@ export function Header(props: { onMenu: () => void }) {
       >
         <Icon.menu />
       </button>
+      <a
+        href={`#${ROUTES.calendar}`}
+        class="flex shrink-0 items-center gap-2"
+        aria-label="wycal — calendar"
+      >
+        <span class="size-2.5 rounded-full bg-accent" aria-hidden="true" />
+        <span class="text-lg font-bold tracking-tight text-fg-strong">wycal</span>
+      </a>
+      <div class="flex-1" aria-hidden="true" />
       <nav class="mode-seg flex shrink-0 items-center gap-0.5" role="group" aria-label="Mode">
         {MODES.map((m) => (
           <button
@@ -100,15 +109,6 @@ export function Header(props: { onMenu: () => void }) {
           </button>
         ))}
       </nav>
-      <a
-        href={`#${ROUTES.calendar}`}
-        class="flex shrink-0 items-center gap-2"
-        aria-label="wycal — calendar"
-      >
-        <span class="size-2.5 rounded-full bg-accent" aria-hidden="true" />
-        <span class="text-lg font-bold tracking-tight text-fg-strong">wycal</span>
-      </a>
-      <div class="flex-1" aria-hidden="true" />
       <button
         type="button"
         class="btn btn-ghost btn-sm icon-btn shrink-0"

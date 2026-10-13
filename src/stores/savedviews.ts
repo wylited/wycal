@@ -5,7 +5,7 @@
  */
 import { signal } from '@preact/signals'
 import { dayKey } from '../lib/util/date'
-import { collections, isCalendarVisible, setVisibility } from './calendars'
+import { applyVisibility, collections, isCalendarVisible } from './calendars'
 import { newUid } from '../lib/util/id'
 import { prefs, setPrefs } from './prefs'
 
@@ -211,13 +211,13 @@ function captureCurrentView(): { view: SavedViewV2Name; n?: number; includeTodos
   return { view, n: undefined, includeTodos: view === 'agenda' }
 }
 
-/** Capture the CURRENT calendar visibility + view + n + todos toggle (never
- * the date) as a new V2 view. `name` trims to a label, defaulting to
- * "View <count>". */
+/** Capture the CURRENT schedule-domain calendar visibility + view + n + todos
+ * toggle (never the date) as a new V2 view. `name` trims to a label,
+ * defaulting to "View <count>". */
 export function saveCurrentView(name?: string): SavedViewV2 {
   const { view, n, includeTodos } = captureCurrentView()
   const visibility = collections.value
-    .filter((c) => c.kind === 'calendar' && isCalendarVisible(c.url))
+    .filter((c) => c.kind === 'calendar' && isCalendarVisible(c.url, 'schedule'))
     .map((c) => c.url)
   const saved: SavedViewV2 = {
     id: newUid(),
@@ -238,13 +238,14 @@ export function saveCurrentView(name?: string): SavedViewV2 {
 export function applyView(id: string): SavedViewV2 | null {
   const v = savedViewsV2.value.find((sv) => sv.id === id)
   if (!v) return null
-  // `setVisibility` hides everything absent from its set, so a bare
+  // `applyVisibility` hides everything absent from its set, so a bare
   // `new Set([])` would blind the calendar; empty = all calendars visible.
+  // V2 views restore the SCHEDULE domain (they are schedule-mode views).
   const visible =
     v.visibility.length === 0
       ? new Set(collections.value.filter((c) => c.kind === 'calendar').map((c) => c.url))
       : new Set(v.visibility)
-  setVisibility(visible)
+  applyVisibility('schedule', visible)
   const params = new URLSearchParams()
   params.set('view', V2_TO_HASH[v.view])
   const preset = v.view === '3d' ? 3 : v.view === '5d' ? 5 : null

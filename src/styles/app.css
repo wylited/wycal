@@ -1095,6 +1095,12 @@ html[data-sidebar-size='large'] .app-sidebar .mm-day {
   overflow: hidden;
 }
 
+/* The last section absorbs leftover column height (grows to the footer) so
+   short stacks don't leave a dead void above 'Share availability'. */
+.sb-sections .sb-section:last-child {
+  flex-grow: 1;
+}
+
 .sb-section-body {
   flex: 1 1 auto;
   min-height: 0;

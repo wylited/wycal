@@ -38,7 +38,7 @@ import {
   setRruleParam,
   setRruleUntil,
 } from '../lib/util/date'
-import { isCalendarVisible } from './calendars'
+import { isCalendarVisible, type VisibilityDomain } from './calendars'
 import { push } from './toasts'
 
 export interface EventRecord {
@@ -236,21 +236,23 @@ function bumpCalVersion(calendarUrl: string): void {
 }
 
 /**
- * Concrete occurrences in [start, end) across *visible* calendars only.
- * Returns materialized EventRecords: `.data` is the concrete occurrence
- * (recurrenceId set when part of a series), `.href`/`.etag` point at the file
- * that `updateEvent`/`deleteEvent` should write. Served from per-calendar
- * month buckets (expansion happens once per calendar × month × data
- * version); the padded buckets overlap, so boundary occurrences are deduped
- * by key before the exact overlap filter runs.
+ * Concrete occurrences in [start, end) across one visibility domain's
+ * calendars ('schedule' by default; the agenda list passes 'agenda' so the
+ * two modes keep independent calendar sets). Returns materialized
+ * EventRecords: `.data` is the concrete occurrence (recurrenceId set when
+ * part of a series), `.href`/`.etag` point at the file that
+ * `updateEvent`/`deleteEvent` should write. Served from per-calendar month
+ * buckets (expansion happens once per calendar × month × data version); the
+ * padded buckets overlap, so boundary occurrences are deduped by key before
+ * the exact overlap filter runs.
  */
-export function occurrences(range: { start: string; end: string }): EventRecord[] {
+export function occurrences(range: { start: string; end: string }, domain: VisibilityDomain = 'schedule'): EventRecord[] {
   const rangeStart = new Date(range.start).getTime()
   const rangeEnd = new Date(range.end).getTime()
   if (!Number.isFinite(rangeStart) || !Number.isFinite(rangeEnd) || rangeEnd <= rangeStart) return []
   const calendars = new Set<string>()
   for (const rec of baseEvents.value.values()) {
-    if (isCalendarVisible(rec.calendarUrl)) calendars.add(rec.calendarUrl)
+    if (isCalendarVisible(rec.calendarUrl, domain)) calendars.add(rec.calendarUrl)
   }
   const out: EventRecord[] = []
   const seen = new Set<string>()

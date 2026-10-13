@@ -19,7 +19,7 @@ const GLOBAL: Shortcut[] = [
   ['Quick-add dialog', ['Shift', 'Q']],
   ['New contact', ['C']],
   ['New calendar', ['Shift', 'C']],
-  ['Search (sidebar)', ['/', '⌘K']],
+  ['Command palette (add + search)', ['/', '⌘K']],
   ['Settings', ['S']],
   ['Toggle sidebar', ['X']],
   ['Scratch notes', ['\\']],

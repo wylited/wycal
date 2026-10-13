@@ -42,9 +42,16 @@ export function ContactsView() {
   const detailRec = detail !== null ? contacts.value.get(detail.href) : undefined
 
   // Global `c` (app.tsx) navigates here and pings 'wycal:newcontact' — open
-  // the create editor.
+  // the create editor. The command palette attaches a prefill candidate
+  // ({fn, email?, tel?}) in the event detail.
+  const [createPrefill, setCreatePrefill] = useState<{ fn: string; email?: string; tel?: string } | null>(null)
   useEffect(() => {
-    const onNewContact = (): void => openCreate()
+    const onNewContact = (e: Event): void => {
+      const prefill = (e as CustomEvent).detail?.prefill as { fn: string; email?: string; tel?: string } | undefined
+      setCreatePrefill(prefill ?? null)
+      setEditing(null)
+      setEditorOpen(true)
+    }
     window.addEventListener('wycal:newcontact', onNewContact)
     return () => window.removeEventListener('wycal:newcontact', onNewContact)
   }, [])
@@ -64,11 +71,6 @@ export function ContactsView() {
   /** Click-to-inspect (§22 pattern): anchor the detail popover to the card. */
   function openDetail(record: ContactRecord, anchor: HTMLElement): void {
     setDetail({ href: record.href, anchor })
-  }
-
-  function openCreate(): void {
-    setEditing(null)
-    setEditorOpen(true)
   }
 
   /** Open the existing ContactEditor for `record`; any detail popover yields. */
@@ -173,6 +175,7 @@ export function ContactsView() {
         open={editorOpen}
         record={editing}
         addressbookUrl={addressbookUrl ?? ''}
+        initial={editing === null ? (createPrefill ?? undefined) : undefined}
         onClose={() => setEditorOpen(false)}
       />
     </div>

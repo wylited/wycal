@@ -30,6 +30,12 @@ import { SettingsView } from './views/settings/SettingsView';
 import SavedComposite from './views/search/SavedComposite';
 import { EventEditor } from './views/event-editor/EventEditor';
 import { QuickAddDialog, openQuickAdd } from './views/quickadd/QuickAddDialog';
+import {
+  CommandPalette,
+  closeCommandPalette,
+  isCommandPaletteOpen,
+  openCommandPalette,
+} from './views/command/CommandPalette';
 import { Header } from './views/shell/Header';
 import { Sidebar } from './views/shell/Sidebar';
 import { ToastHost } from './ui/Toasts';
@@ -138,19 +144,22 @@ export function App() {
     startSync();
   }, []);
 
-  // Global keyboard shortcuts (CONTRACTS §16, §nav-revamp): n new event
-  // · Shift+N quick-add a todo directly · c/C new contact/calendar
-  // · / or ⌘K focus the sidebar search · s settings · x sidebar · \ scratch
-  // notes · ? help · 1–9 toggle calendar n · q close topmost dialog · Q
-  // quick-add dialog. Route-aware
+  // Global keyboard shortcuts (CONTRACTS §16, §nav-revamp, §wave-14): ⌘K
+  // command palette · n new event · Shift+N quick-add a todo directly ·
+  // c/C new contact/calendar · / command palette (superset of the old
+  // sidebar-search focus) · s settings · x sidebar · \ scratch notes · ?
+  // help · 1–9 toggle calendar n · q close topmost dialog · Q quick-add
+  // dialog. Route-aware
   // (works on every route), input-gated, and dialog-gated (`q` still fires so
   // it can close the dialog). Calendar-scope keys live in useShortcuts.
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      // ⌘K / Ctrl+K focuses the sidebar search from anywhere (even inside
-      // inputs — it is a chord, not a typed character).
+      // ⌘K / Ctrl+K toggles the command palette from anywhere (even inside
+      // inputs — it is a chord, not a typed character). Never opens on top of
+      // another dialog, but always closes itself.
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
-        if (!isDialogOpen()) pingRouteView('wycal:search');
+        if (isCommandPaletteOpen()) closeCommandPalette();
+        else if (!isDialogOpen()) openCommandPalette();
         e.preventDefault();
         return;
       }
@@ -178,9 +187,11 @@ export function App() {
           if (!dialogUp) pingRouteView('wycal:newcalendar');
           break;
         case '/':
-          // §nav-revamp: focuses the sidebar search box (SidebarSearch listens
-          // for this ping; the header box and the #/search overlay are gone).
-          if (!dialogUp) pingRouteView('wycal:search');
+          // §wave-14: opens the command palette — a superset of the old
+          // sidebar-search focus (typing searches the same engine; NL creates
+          // events/tasks/contacts on top). The sidebar search box keeps its
+          // click focus (the palette owns the keyboard entry points).
+          if (!dialogUp) openCommandPalette();
           break;
         case 's':
           if (!dialogUp) window.location.hash = `#${ROUTES.settings}`;
@@ -259,6 +270,7 @@ export function App() {
       <ScratchNotes />
       <EventEditor />
       <QuickAddDialog />
+      <CommandPalette />
       <HelpOverlay />
     </div>
   );
