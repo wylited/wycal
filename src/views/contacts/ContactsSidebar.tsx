@@ -1,18 +1,16 @@
 /** @jsxImportSource preact */
 /**
- * Contacts sidebar sections (design.md §5): [New contact], tag filter,
- * upcoming birthdays. Rendered inside the app Sidebar's contacts mode by
- * shell/Sidebar.tsx. Self-contained (no props): reads the contacts store +
- * the shared signals in stores/contacts (contactTagFilter drives the main
- * list's AND filter, requestOpenContact opens the detail popover in the main
- * view). Create reuses the existing `wycal:newcontact` window event that
- * ContactsView already listens for — same flow as the header + button.
+ * Contacts sidebar sections (design.md §5): tag filter + upcoming birthdays.
+ * Rendered inside the app Sidebar's contacts mode by shell/Sidebar.tsx.
+ * Self-contained (no props): reads the contacts store + the shared signals
+ * in stores/contacts (contactTagFilter drives the main list's AND filter,
+ * requestOpenContact opens the detail popover in the main view). Contact
+ * creation lives in the sidebar's unified New-item button, which dispatches
+ * the `wycal:newcontact` window event ContactsView listens for.
  */
 import { useMemo } from 'preact/hooks'
 import { contacts, contactTagFilter, requestOpenContact } from '../../stores/contacts'
-import { collections } from '../../stores/calendars'
 import { syncState } from '../../lib/sync/engine'
-import { Icon } from '../../ui/icons'
 
 /** How far ahead the birthday list looks (days, inclusive of today). */
 const BIRTHDAY_WINDOW_DAYS = 30
@@ -95,21 +93,9 @@ export default function ContactsSidebar() {
   const birthdays = useUpcomingBirthdays()
   const active = contactTagFilter.value
   const syncing = [...syncState.value.values()].some((s) => s.state === 'syncing')
-  const addressbookUrl = collections.value.find((c) => c.kind === 'addressbook')?.url
 
   return (
     <div class="flex flex-col gap-3 px-2 py-2">
-      <button
-        type="button"
-        class="btn btn-primary w-full"
-        onClick={() => window.dispatchEvent(new Event('wycal:newcontact'))}
-        disabled={!addressbookUrl}
-        title={addressbookUrl ? 'New contact (C)' : 'Connect an account with an address book first'}
-      >
-        <Icon.plus size={16} />
-        New contact
-      </button>
-
       {tags.length > 0 && (
         <section aria-label="Contact tags" class="flex flex-col gap-1">
           <div class="flex items-center gap-1">
@@ -126,12 +112,12 @@ export default function ContactsSidebar() {
               </button>
             )}
           </div>
-          <div class="flex flex-wrap gap-1">
+          <div class="flex flex-nowrap gap-1 overflow-x-auto">
             {tags.map((tag) => (
               <button
                 key={tag}
                 type="button"
-                class="chip"
+                class="chip shrink-0 whitespace-nowrap"
                 aria-pressed={active.includes(tag)}
                 title={active.includes(tag) ? `Stop filtering by “${tag}”` : `Filter by “${tag}”`}
                 onClick={() => toggleTag(tag)}

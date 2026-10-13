@@ -30,10 +30,6 @@ interface Prefs {
   sidebarSize: SidebarSize;
   /** Sidebar drag-resize width in px (§22); absent → 264. */
   sidebarWidth?: number;
-  /** Time-axis zoom in minutes per slot (§22 ladder); absent → 30.
-   *  Legacy string presets migrate in loadPrefs ('overview'/'comfortable'→30,
-   *  'detailed'→15). */
-  zoom?: number;
   /** Provision Inbox/Birthdays calendars per account when missing (§13). */
   autoProvision?: boolean;
   /** Agenda view window in days (§agenda chips); absent → 14. */
@@ -68,7 +64,6 @@ const DEFAULT_PREFS: Readonly<Prefs> = {
   density: 'compact',
   sidebarSize: 'default',
   sidebarWidth: 264,
-  zoom: 30,
   autoProvision: true,
   agendaRange: 14,
   agendaGroup: 'day',
@@ -122,15 +117,9 @@ function loadPrefs(): Prefs {
         typeof s.sidebarWidth === 'number' && Number.isFinite(s.sidebarWidth)
           ? Math.min(420, Math.max(200, s.sidebarWidth))
           : DEFAULT_PREFS.sidebarWidth,
-      // §22: zoom is minutes; legacy §22 presets migrate to rungs.
-      zoom:
-        typeof s.zoom === 'number' && Number.isFinite(s.zoom) && s.zoom >= 5 && s.zoom <= 60
-          ? s.zoom
-          : s.zoom === 'comfortable' || s.zoom === 'overview'
-            ? 30
-            : s.zoom === 'detailed'
-              ? 15
-              : DEFAULT_PREFS.zoom,
+      // Legacy time-axis scale presets (§22 feature, removed) are dropped by
+      // design: loadPrefs rebuilds the object field-by-field, so stale keys
+      // never enter prefs, and the next setPrefs persist rewrites storage clean.
       autoProvision: typeof s.autoProvision === 'boolean' ? s.autoProvision : DEFAULT_PREFS.autoProvision,
       agendaRange:
         s.agendaRange === 7 || s.agendaRange === 14 || s.agendaRange === 30

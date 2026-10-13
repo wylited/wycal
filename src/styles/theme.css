@@ -353,7 +353,7 @@ body {
   border-color: var(--ev-c, var(--accent));
 }
 
-/* Short timed events (e.g. 15-min meetings at coarse zoom rungs) get FC's
+/* Short timed events (e.g. short 15-min events) get FC's
    fc-timegrid-event-short: ~14px tall, and FC's own short-event fill is
    blanked by our theme, so the text renders bare on the grid. Wash the main
    box with the event color and keep the 3px color bar so short pills stay
@@ -631,7 +631,7 @@ body {
     filter: brightness(0.95);
   }
 
-  /* View/zoom sheet popped above the bar; .card supplies the fill, hairline
+  /* view sheet popped above the bar; .card supplies the fill, hairline
      and radius — this trims its padding and lifts it over the bar. */
   .wycal-view-sheet {
     position: absolute;

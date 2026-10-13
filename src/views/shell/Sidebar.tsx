@@ -1,13 +1,15 @@
 /** @jsxImportSource preact */
 /**
- * App sidebar (design.md §4, §nav-revamp): search box on top, then per-mode
- * content — Schedule (New event, mini-month, Calendars, saved views, Upcoming,
- * Share availability, accounts), Agenda (Calendars, Events/Todos + todo
- * filter chips, agenda saved views, Upcoming), Contacts (ContactsSidebar) —
- * with mini-month + accounts always present. The six stack sections are
- * separated by draggable separators (prefs.sidebarSectionHeights; double-click
- * resets). Sidebar side flips via prefs.sidebarSide; the old Size control is
- * gone (prefs.sidebarSize stays in storage, no UI writes it).
+ * App sidebar (design.md §4, §nav-revamp): a unified New-item button (label +
+ * action per mode) and the search box on top, then per-mode content —
+ * Schedule (mini-month, Calendars, saved views, Upcoming, Share availability,
+ * accounts), Agenda (todo filter chips, Calendars, agenda saved views,
+ * Upcoming), Contacts (ContactsSidebar) — with mini-month + accounts always
+ * present. A non-empty search takes over the whole column (the section stack
+ * is hidden until cleared). The stack sections are separated by draggable
+ * separators (prefs.sidebarSectionHeights; double-click resets). Sidebar side
+ * flips via prefs.sidebarSide; the old Size control is gone
+ * (prefs.sidebarSize stays in storage, no UI writes it).
  */
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { Fragment } from 'preact';
@@ -44,6 +46,7 @@ import { parseRoutePath, ROUTES, useHash } from '../../routes';
 import { Icon } from '../../ui/icons';
 import { useFocusTrap } from '../../ui/Modal';
 import { openEditor } from '../event-editor/editorState';
+import { openQuickAdd } from '../quickadd/QuickAddDialog';
 import SidebarSearch from '../search/SidebarSearch';
 import ContactsSidebar from '../contacts/ContactsSidebar';
 import { ShareAvailability } from '../calendar/ShareAvailability';
@@ -394,12 +397,12 @@ function AgendaFilterBlock() {
         ))}
       </div>
       {allTags.length > 0 && (
-        <div class="flex flex-wrap items-center gap-1" role="group" aria-label="Todo tag filter">
+        <div class="flex flex-nowrap items-center gap-1 overflow-x-auto" role="group" aria-label="Todo tag filter">
           {allTags.map((tag) => (
             <button
               key={tag}
               type="button"
-              class="sb-chip"
+              class="sb-chip shrink-0 whitespace-nowrap"
               aria-pressed={tags.includes(tag)}
               onClick={() => toggleAgendaTag(tag)}
             >
@@ -434,10 +437,103 @@ export function Sidebar(props: { open: boolean; onClose: () => void }) {
   const [settings, setSettings] = useState<{ url: string; anchor: HTMLElement } | null>(null);
 
   // Sidebar side (§nav-revamp): stamp <html data-sidebar-side> for the flip
-  // CSS and the §22 resize handle in CalendarView (absent = right).
+  // CSS and the §22 resize handle below (absent = right).
   useEffect(() => {
     document.documentElement.dataset.sidebarSide = prefs.value.sidebarSide;
   }, [prefs.value.sidebarSide]);
+
+  // --- §22 sidebar edge drag-resize -------------------------------------------
+  // Shell-owned (works in EVERY mode — CalendarView unmounts in Contacts).
+  // The 6px col-resize handle is a body-level fixed element glued to the
+  // aside's INNER edge (ResizeObserver + side-flip MutationObserver keep it
+  // positioned; body-level escapes the aside's overflow-hidden). Dragging
+  // writes `--sidebar-w` on <html> (clamped 200–420px; theme.css token is
+  // the fallback) and persists prefs.sidebarWidth debounced 300ms.
+  // Geometry: measure from the OUTER (window-anchored, non-moving) edge so
+  // the width tracks the pointer with no moving-reference feedback — right
+  // sidebar: r.right − clientX; left sidebar: clientX − r.left.
+  useEffect(() => {
+    const aside = asideRef.current;
+    if (!aside) return;
+    const root = document.documentElement;
+    const mq = window.matchMedia('(min-width: 768px)');
+    const clampW = (w: number) => Math.min(420, Math.max(200, Math.round(w)));
+
+    const handle = document.createElement('div');
+    handle.className = 'wycal-sidebar-handle';
+    handle.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(handle);
+
+    let persistTimer = 0;
+    let dragging = false;
+
+    const sync = () => {
+      if (!mq.matches) {
+        handle.style.display = 'none';
+        return;
+      }
+      const r = aside.getBoundingClientRect();
+      handle.style.display = '';
+      handle.style.top = `${r.top}px`;
+      handle.style.height = `${r.height}px`;
+      // The 6px handle hugs the aside's INNER edge.
+      handle.style.left = root.dataset.sidebarSide === 'left' ? `${r.right - 3}px` : `${r.left - 3}px`;
+    };
+    const onDown = (e: PointerEvent) => {
+      if (!mq.matches || e.button !== 0) return;
+      dragging = true;
+      handle.setPointerCapture(e.pointerId);
+      handle.classList.add('wycal-dragging');
+      aside.style.transition = 'none'; // width tracks the pointer, no 200ms chase
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+    };
+    const onMove = (e: PointerEvent) => {
+      if (!dragging) return;
+      const r = aside.getBoundingClientRect();
+      const w = root.dataset.sidebarSide === 'left' ? e.clientX - r.left : r.right - e.clientX;
+      root.style.setProperty('--sidebar-w', `${clampW(w)}px`);
+      sync();
+    };
+    const onUp = () => {
+      if (!dragging) return;
+      dragging = false;
+      handle.classList.remove('wycal-dragging');
+      aside.style.transition = '';
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      const w = clampW(parseFloat(getComputedStyle(aside).width));
+      window.clearTimeout(persistTimer);
+      persistTimer = window.setTimeout(() => setPrefs({ sidebarWidth: w }), 300);
+    };
+    handle.addEventListener('pointerdown', onDown);
+    handle.addEventListener('pointermove', onMove);
+    handle.addEventListener('pointerup', onUp);
+    handle.addEventListener('pointercancel', onUp);
+
+    const ro = new ResizeObserver(sync);
+    ro.observe(aside);
+    // A live side flip moves the inner edge without resizing the aside.
+    const sideMo = new MutationObserver(sync);
+    sideMo.observe(root, { attributes: true, attributeFilter: ['data-sidebar-side'] });
+    mq.addEventListener('change', sync);
+    root.style.setProperty('--sidebar-w', `${clampW(prefs.value.sidebarWidth ?? 264)}px`);
+    sync();
+
+    return () => {
+      ro.disconnect();
+      sideMo.disconnect();
+      mq.removeEventListener('change', sync);
+      handle.removeEventListener('pointerdown', onDown);
+      handle.removeEventListener('pointermove', onMove);
+      handle.removeEventListener('pointerup', onUp);
+      handle.removeEventListener('pointercancel', onUp);
+      handle.remove();
+      window.clearTimeout(persistTimer);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, []);
 
   const { path, query } = parseRoutePath(hash.replace(/^#/, ''));
   const mode: ShellMode =
@@ -450,15 +546,26 @@ export function Sidebar(props: { open: boolean; onClose: () => void }) {
   const dateParam = query.get('date');
   const routeDate = dateParam && DATE_KEY.test(dateParam) ? dateParam : null;
 
-  // --- Section heights (§nav-revamp): drag a separator to resize the LOWER
-  // adjacent section (flex-basis px, 60px…70% of sidebar); double-click
-  // resets both neighbors to auto. Persisted debounced 300ms.
+  // --- Section heights (§nav-revamp): drag a separator to move it, resizing
+  // BOTH adjacent sections together (each gets an explicit flex-basis px, so
+  // the untouched sections never auto-redistribute and the divider tracks
+  // the pointer 1:1): drag DOWN grows the upper section / shrinks the lower
+  // one (60px…70% of sidebar); double-click resets both neighbors to auto.
+  // Persisted debounced 300ms.
   const [heights, setHeights] = useState<Record<string, number>>(() => ({
     ...(prefs.value.sidebarSectionHeights ?? {}),
   }));
   const heightsRef = useRef(heights);
   const heightsTimer = useRef<number | undefined>(undefined);
-  const drag = useRef<{ lower: string; startY: number; startLower: number; max: number } | null>(null);
+  const drag = useRef<{
+    upper: string;
+    lower: string;
+    startY: number;
+    startUpper: number;
+    startLower: number;
+    min: number;
+    max: number;
+  } | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
 
   function applyHeights(next: Record<string, number>, immediate = false): void {
@@ -471,16 +578,20 @@ export function Sidebar(props: { open: boolean; onClose: () => void }) {
     );
   }
 
-  function onSepPointerDown(e: PointerEvent, lowerId: string): void {
+  function onSepPointerDown(e: PointerEvent, upperId: string, lowerId: string): void {
     const aside = asideRef.current;
+    const upperEl = aside?.querySelector<HTMLElement>(`[data-section="${upperId}"]`);
     const lowerEl = aside?.querySelector<HTMLElement>(`[data-section="${lowerId}"]`);
-    if (!aside || !lowerEl) return;
+    if (!aside || !upperEl || !lowerEl) return;
     e.preventDefault();
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     drag.current = {
+      upper: upperId,
       lower: lowerId,
       startY: e.clientY,
+      startUpper: upperEl.getBoundingClientRect().height,
       startLower: lowerEl.getBoundingClientRect().height,
+      min: SECTION_MIN_PX,
       max: aside.clientHeight * SECTION_MAX_FRACTION,
     };
     setDragging(lowerId);
@@ -489,8 +600,19 @@ export function Sidebar(props: { open: boolean; onClose: () => void }) {
   function onSepPointerMove(e: PointerEvent): void {
     const d = drag.current;
     if (!d) return;
-    const next = Math.min(d.max, Math.max(SECTION_MIN_PX, d.startLower - (e.clientY - d.startY)));
-    applyHeights({ ...heightsRef.current, [d.lower]: Math.round(next) });
+    // Clamp the delta so BOTH neighbors stay within [min, max]; inside that
+    // range the divider follows the pointer 1:1 (down = upper grows, lower
+    // shrinks).
+    const dy = Math.min(
+      Math.max(e.clientY - d.startY, d.min - d.startUpper, d.startLower - d.max),
+      d.max - d.startUpper,
+      d.startLower - d.min,
+    );
+    applyHeights({
+      ...heightsRef.current,
+      [d.upper]: Math.round(d.startUpper + dy),
+      [d.lower]: Math.round(d.startLower - dy),
+    });
   }
 
   function onSepPointerEnd(e: PointerEvent): void {
@@ -612,6 +734,7 @@ export function Sidebar(props: { open: boolean; onClose: () => void }) {
   };
 
   const [shareOpen, setShareOpen] = useState(false);
+  const [searchActive, setSearchActive] = useState(false);
 
   // --- Section stack (§nav-revamp): order is mode-dependent; mini-month and
   // accounts are always present.
@@ -825,17 +948,38 @@ export function Sidebar(props: { open: boolean; onClose: () => void }) {
         style={{ order: side === 'left' ? 1 : 3 }}
       >
         <div class="app-sidebar-body flex min-h-0 min-w-(--sidebar-w) flex-1 flex-col">
-          {/* Search (§nav-revamp): every mode; '/' / ⌘K focus it. */}
-          <SidebarSearch onNavigate={() => { if (!isDesktop) props.onClose() }} />
-          {mode === 'schedule' && (
-            <div class="flex flex-col gap-1.5 px-4 pb-2">
-              <button type="button" class="btn btn-primary w-full" title="New event (N)" onClick={onNew}>
-                <Icon.plus size={14} />
-                New event
-              </button>
-            </div>
-          )}
-          {mode === 'agenda' && <AgendaFilterBlock />}
+          {/* Unified New-item slot (§nav-revamp): the primary action in every
+              mode, then the search box — a non-empty search takes over the
+              column and hides everything below until cleared. */}
+          <div class="flex flex-col gap-1.5 px-4 pb-2 pt-3">
+            <button
+              type="button"
+              class="btn btn-primary w-full"
+              title={
+                mode === 'schedule' ? 'New event (N)' : mode === 'agenda' ? 'New task (Shift+N)' : 'New contact'
+              }
+              onClick={() => {
+                if (mode === 'schedule') {
+                  onNew();
+                } else {
+                  if (!isDesktop) props.onClose();
+                  if (mode === 'agenda') openQuickAdd('todo');
+                  else window.dispatchEvent(new CustomEvent('wycal:newcontact'));
+                }
+              }}
+            >
+              <Icon.plus size={14} />
+              {mode === 'schedule' ? 'New event' : mode === 'agenda' ? 'New task' : 'New contact'}
+            </button>
+          </div>
+          <SidebarSearch
+            mode={mode}
+            onNavigate={() => { if (!isDesktop) props.onClose() }}
+            onActiveChange={setSearchActive}
+          />
+          {!searchActive && (
+            <>
+              {mode === 'agenda' && <AgendaFilterBlock />}
           {/* Resizable section stack with drag separators. */}
           <div class="sb-sections flex min-h-0 flex-1 flex-col">
             {sections.map((s, i) => (
@@ -846,7 +990,7 @@ export function Sidebar(props: { open: boolean; onClose: () => void }) {
                     aria-orientation="horizontal"
                     aria-label={`Resize ${s.label} section (double-click to reset)`}
                     class={`sb-sep ${dragging === s.id ? 'is-dragging' : ''}`}
-                    onPointerDown={(e) => onSepPointerDown(e, s.id)}
+                    onPointerDown={(e) => onSepPointerDown(e, sections[i - 1].id, s.id)}
                     onPointerMove={onSepPointerMove}
                     onPointerUp={onSepPointerEnd}
                     onPointerCancel={onSepPointerEnd}
@@ -877,6 +1021,8 @@ export function Sidebar(props: { open: boolean; onClose: () => void }) {
                 Share availability
               </button>
             </div>
+          )}
+            </>
           )}
         </div>
       </aside>

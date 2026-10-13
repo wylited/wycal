@@ -560,6 +560,33 @@
     min-height: 18px;
   }
 
+  /* --- Compact timeGrid event line (§grid): one flex line — 10px time +
+     ellipsizing title — so 15-min events (24px, eventMinHeight floor) and
+     narrow overlap lanes stay readable. min-width: 0 lets the flex children
+     shrink so text-overflow actually engages inside FC's lane boxes. --- */
+  .fc .fc-event-main.fc-event-main {
+    min-width: 0;
+  }
+  .fc .wycal-ev-line {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    height: 100%;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+  .fc .wycal-ev-time {
+    font-size: 10px;
+    opacity: 0.8;
+    flex-shrink: 0;
+  }
+  .fc .wycal-ev-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+  }
+
   /* Mobile (<768px) touch ergonomics: hit targets ≥40px, raised via padding;
      visual size stays close to the desktop controls. */
   @media (max-width: 767px) {
@@ -677,7 +704,7 @@ html[data-sidebar-size='large'] .app-sidebar .text-sm {
 }
 
 /* --- §22 counter pills (CalendarView toolbar): the tiny inline −/+
-   buttons INSIDE the N-days / Zoom counter pills. Pairs with .btn; last block
+   buttons INSIDE the N-days counter pill. Pairs with .btn; last block
    in this file so it also wins the <768px 40px touch-target rule (a 40px
    button would explode the 24px pill). */
 .btn-xs {
@@ -1166,4 +1193,12 @@ html[data-sidebar-size='large'] .app-sidebar .mm-day {
 html[data-sidebar-side='left'] .app-sidebar {
   border-right-width: 1px;
   border-left-width: 0;
+}
+
+/* ===== W2-SidebarUX: sidebar search takeover (appended block) ===== */
+/* While a query is active, SidebarSearch takes over the whole sidebar
+   column; let its results fill the remaining height instead of the static
+   40vh cap set on .sb-search-results above. */
+.sb-search.sb-search-active .sb-search-results {
+  max-height: none;
 }

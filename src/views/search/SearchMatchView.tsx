@@ -26,13 +26,15 @@ interface EventRowProps {
   hour12: boolean
 }
 
-/** Event row: colored dot · time · title · calendar name. */
+/** Event row: colored dot · date+time · title · calendar name. The date makes
+ *  recurring/cross-day occurrences distinguishable (§30 scoped sidebar search:
+ *  schedule results must say WHEN each hit happens). */
 export function EventRow(props: EventRowProps) {
   return (
     <div class="flex h-8 items-center gap-2 rounded px-2.5 hover:bg-surface-2">
       <span class="chip-dot shrink-0" style={{ background: props.calColor }} />
-      <span class="w-16 shrink-0 text-xs tabular-nums text-muted">
-        {props.allDay ? 'all-day' : fmtTime(props.when, props.hour12)}
+      <span class="w-28 shrink-0 text-xs tabular-nums text-muted">
+        {props.allDay ? fmtDate(props.when) : `${fmtDate(props.when)} ${fmtTime(props.when, props.hour12)}`}
       </span>
       <span class="truncate text-base text-fg-strong">{props.title}</span>
       {props.calName && <span class="ml-auto truncate pl-2 text-sm text-muted">{props.calName}</span>}

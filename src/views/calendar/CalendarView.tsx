@@ -9,7 +9,7 @@
  * (research §1.5–§1.6); the event feed lives in ./useCalendarEvents.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/hooks'
-import type { CalendarApi, CalendarOptions, DateSelectArg, DatesSetArg, EventClickArg, EventDropArg, EventMountArg } from '@fullcalendar/core'
+import type { CalendarApi, CalendarOptions, DateSelectArg, DatesSetArg, EventClickArg, EventContentArg, EventDropArg, EventMountArg } from '@fullcalendar/core'
 import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
 import timeGridPlugin from '@fullcalendar/timegrid'
@@ -149,21 +149,6 @@ const MOBILE_VIEW_LABELS: Record<HashView, string> = {
 /** Segmented value: the known hash views plus the dynamic N-days segment (§22). */
 type SegValue = HashView | '__n'
 
-/** §22 time-axis zoom ladder, coarse → fine: minutes per slot. `prefs.zoom`
- *  stores raw minutes (30 default); named rungs below. 30 min is the
- *  COARSEST rung; finer rungs zoom in (⌘/Ctrl+wheel). slotDuration renders
- *  as `00:${String(m).padStart(2, '0')}:00` (minutes in the MM position); the
- *  slot label interval is `01:00:00` at every rung (60 is a whole multiple of
- *  every ladder slot, so hourly labels never double-label a slot). */
-const ZOOM_LADDER: readonly number[] = [30, 20, 15, 10, 5]
-
-/** Drag/create/resize snap granularity: 15 min where 15 divides the slot, else
- *  10, else 5 — FC's wholeDivide silently drops a snapDuration that doesn't
- *  divide slotDuration, so the snap must always divide the slot. */
-const snapFor = (m: number): number => (m % 15 === 0 ? 15 : m % 10 === 0 ? 10 : 5)
-
-const ZOOM_NAMES: Partial<Record<number, string>> = { 30: 'Comfortable', 15: 'Detailed', 5: 'Ultra' }
-
 /** §agenda infinite scroll: the loaded window starts at 14 days and grows by
  *  +14 whenever AgendaList's bottom sentinel nears the viewport; a hash-date
  *  or grouping change resets it. No range chips — the agenda is endless. */
@@ -178,15 +163,6 @@ const AGENDA_GROUP_OPTIONS: SegmentedOption<AgendaGroup>[] = [
   { value: 'calendar', label: 'Calendar', title: 'Group by calendar' },
 ]
 
-/** Snap a stored zoom value to the nearest ladder rung (migration safety;
- *  absent → 30, the 'Comfortable' default). */
-function zoomRung(v: number | undefined): number {
-  if (v === undefined) return 30
-  let best = ZOOM_LADDER[0]
-  for (const m of ZOOM_LADDER) if (Math.abs(m - v) < Math.abs(best - v)) best = m
-  return best
-}
-
 /**
  * Event pill chrome (design.md §1): tag each event element with `.wycal-ev` and
  * its calendar color as `--ev-c`; the soft fill + 3px left bar come from
@@ -199,6 +175,24 @@ function onEventMount(info: EventMountArg): void {
   info.el.dataset.wycalKey = info.event.id
   const color: string | undefined = info.event.extendedProps.color
   if (color) info.el.style.setProperty('--ev-c', color)
+}
+
+/**
+ * Compact single-line timeGrid event content (§grid): 10px time + title on one
+ * line, ellipsizing in narrow overlap lanes — a 15-min event is barely taller
+ * than FC's default two-line stack, which clipped. All-day lanes render the
+ * title only (no time span). dayGrid/list views return undefined and keep FC's
+ * defaults. Module-level = stable reference (FC handler props never churn).
+ */
+function renderEventContent(arg: EventContentArg) {
+  if (!arg.view.type.startsWith('timeGrid')) return undefined
+  if (arg.event.allDay) return <div class="wycal-ev-title">{arg.event.title}</div>
+  return (
+    <div class="wycal-ev-line">
+      <span class="wycal-ev-time">{arg.timeText}</span>
+      <span class="wycal-ev-title">{arg.event.title}</span>
+    </div>
+  )
 }
 
 export function CalendarView() {
@@ -232,7 +226,7 @@ export function CalendarView() {
   const [agendaDateKey, setAgendaDateKey] = useState<string | undefined>(initial.date)
 
   // --- §mobile bottom bar (calendar view, <768px) ------------------------------
-  // 'View' opens the view/zoom sheet above the bar; outside click, Esc, or a
+  // 'View' opens the view sheet above the bar; outside click, Esc, or a
   // selection closes it. While up it registers as a dialog so the §16 global
   // keybinds stay gated (same bumpDialogOpen pattern as the other popovers).
   const [viewSheetOpen, setViewSheetOpen] = useState(false)
@@ -337,7 +331,6 @@ export function CalendarView() {
   // Enter-only animations on the owned stage div around <FullCalendar> (never
   // FC internals); the class is removed on animationend with a timer belt.
   const stageRef = useRef<HTMLDivElement | null>(null)
-  const gridWrapRef = useRef<HTMLDivElement | null>(null)
   const animCleanupRef = useRef<(() => void) | null>(null)
   useEffect(() => () => animCleanupRef.current?.(), [])
 
@@ -415,170 +408,14 @@ export function CalendarView() {
     return true
   }, [])
 
-  // --- §22 time-axis zoom ------------------------------------------------------
-  // ZOOM_LADDER minutes; + steps finer (zoom in), − coarser. ⌘/Ctrl+wheel over
-  // the grid steps the same ladder live (setOption now, prefs debounced 300ms)
-  // with a transient `${m} min slots` pill over the grid's top-right.
-  const zoomPersistTimer = useRef<number>(0)
-  const zoomPillTimer = useRef<number>(0)
-  const [zoomPill, setZoomPill] = useState<string | null>(null)
-
-  const applyZoom = useCallback((m: number, persist: 'now' | 'debounced') => {
-    const api = getApi()
-    api?.setOption('slotDuration', `00:${String(m).padStart(2, '0')}:00`)
-    api?.setOption('snapDuration', `00:${String(snapFor(m)).padStart(2, '0')}:00`)
-    api?.setOption('slotLabelInterval', '01:00:00')
-    window.clearTimeout(zoomPersistTimer.current)
-    if (persist === 'now') setPrefs({ zoom: m })
-    else zoomPersistTimer.current = window.setTimeout(() => setPrefs({ zoom: m }), 300)
-  }, [getApi])
-
-  /** Toolbar −/+ (and keyboard parity): one ladder rung per step. */
-  const stepZoom = useCallback((delta: 1 | -1) => {
-    const cur = ZOOM_LADDER.indexOf(zoomRung(prefs.value.zoom))
-    const next = Math.min(ZOOM_LADDER.length - 1, Math.max(0, cur + delta))
-    if (next === cur) return
-    applyZoom(ZOOM_LADDER[next], 'now')
-  }, [applyZoom])
-
-  // ⌘/Ctrl+wheel zoom (timeGrid views only): wheel up = zoom in (finer slots),
-  // down = zoom out. preventDefault ONLY when the modifier is held, so plain
-  // scrolling is untouched. A 120ms gate turns one trackpad gesture into
-  // rung-by-rung steps instead of blasting through the ladder.
-  const wheelGate = useRef(0)
   // First-paint skeleton (design.md §5 loading): while an initial sync is in
   // flight and the events store is still empty, pulse rows stand in for the
-  // grid instead of mounting FullCalendar over nothing. Hoisted above the
-  // ⌘/Ctrl+wheel effect so that effect can re-run once the grid mounts.
+  // grid instead of mounting FullCalendar over nothing.
   const initialSyncing =
     accounts.value.length > 0 &&
     [...syncState.value.values()].some((s) => s.state === 'syncing') &&
     baseEvents.value.size === 0 &&
     overrides.value.size === 0
-  useEffect(() => {
-    const el = gridWrapRef.current
-    if (!el) return
-    const onWheel = (e: WheelEvent) => {
-      if (!(e.ctrlKey || e.metaKey)) return
-      if (!fcViewRef.current.startsWith('timeGrid') || !stageRef.current) return
-      e.preventDefault()
-      const now = Date.now()
-      if (now - wheelGate.current < 120) return
-      wheelGate.current = now
-      const cur = ZOOM_LADDER.indexOf(zoomRung(prefs.value.zoom))
-      const next = Math.min(ZOOM_LADDER.length - 1, Math.max(0, cur + (e.deltaY < 0 ? 1 : -1)))
-      if (next === cur) return
-      applyZoom(ZOOM_LADDER[next], 'debounced')
-      setZoomPill(`${ZOOM_LADDER[next]} min slots`)
-      window.clearTimeout(zoomPillTimer.current)
-      zoomPillTimer.current = window.setTimeout(() => setZoomPill(null), 800)
-    }
-    el.addEventListener('wheel', onWheel, { passive: false })
-    return () => el.removeEventListener('wheel', onWheel)
-  }, [applyZoom, !initialSyncing])
-  useEffect(() => () => {
-    window.clearTimeout(zoomPersistTimer.current)
-    window.clearTimeout(zoomPillTimer.current)
-  }, [])
-
-  // --- §22 sidebar edge drag-resize -------------------------------------------
-  // The aside belongs to Sidebar.tsx; the 6px col-resize handle is mounted
-  // from here as a body-level fixed element positioned off the aside's rect
-  // (ResizeObserver keeps it glued through drawer/resize changes), so
-  // Sidebar.tsx stays untouched. Dragging writes the `--sidebar-w` var on
-  // <html> (clamped 200–420px; the theme.css token is the fallback) and
-  // persists prefs.sidebarWidth debounced 300ms; the saved width is applied
-  // here on boot (inline var beats the :root token).
-  useEffect(() => {
-    const aside = document.querySelector<HTMLElement>('aside[aria-label="Calendar sidebar"]')
-    if (!aside) return
-    const root = document.documentElement
-    const mq = window.matchMedia('(min-width: 768px)')
-    const clampW = (w: number) => Math.min(420, Math.max(200, Math.round(w)))
-
-    const handle = document.createElement('div')
-    handle.className = 'wycal-sidebar-handle'
-    handle.setAttribute('aria-hidden', 'true')
-    document.body.appendChild(handle)
-
-    let persistTimer = 0
-    let dragging = false
-
-    const sync = () => {
-      if (!mq.matches) {
-        handle.style.display = 'none'
-        return
-      }
-      const r = aside.getBoundingClientRect()
-      // Collapsed desktop column (md:w-0) — nothing to grab.
-      if (r.width < 40) {
-        handle.style.display = 'none'
-        return
-      }
-      handle.style.display = ''
-      handle.style.top = `${r.top}px`
-      handle.style.height = `${r.height}px`
-      // The 6px handle hugs the aside's INNER edge (prefs.sidebarSide stamps
-      // <html data-sidebar-side>; absent → 'right').
-      handle.style.left = root.dataset.sidebarSide === 'left' ? `${r.right - 3}px` : `${r.left - 3}px`
-    }
-    const onDown = (e: PointerEvent) => {
-      if (!mq.matches || e.button !== 0) return
-      dragging = true
-      handle.setPointerCapture(e.pointerId)
-      handle.classList.add('wycal-dragging')
-      aside.style.transition = 'none' // width tracks the pointer, no 200ms chase
-      document.body.style.cursor = 'col-resize'
-      document.body.style.userSelect = 'none'
-    }
-    const onMove = (e: PointerEvent) => {
-      if (!dragging) return
-      // Width tracks the pointer from the aside's inner edge (right sidebar:
-      // pointer − left; left sidebar: right − pointer).
-      const r = aside.getBoundingClientRect()
-      const w = root.dataset.sidebarSide === 'left' ? r.right - e.clientX : e.clientX - r.left
-      root.style.setProperty('--sidebar-w', `${clampW(w)}px`)
-      sync()
-    }
-    const onUp = () => {
-      if (!dragging) return
-      dragging = false
-      handle.classList.remove('wycal-dragging')
-      aside.style.transition = ''
-      document.body.style.cursor = ''
-      document.body.style.userSelect = ''
-      const w = clampW(parseFloat(getComputedStyle(aside).width))
-      window.clearTimeout(persistTimer)
-      persistTimer = window.setTimeout(() => setPrefs({ sidebarWidth: w }), 300)
-    }
-    handle.addEventListener('pointerdown', onDown)
-    handle.addEventListener('pointermove', onMove)
-    handle.addEventListener('pointerup', onUp)
-    handle.addEventListener('pointercancel', onUp)
-
-    const ro = new ResizeObserver(sync)
-    ro.observe(aside)
-    // A live side flip moves the inner edge without resizing the aside.
-    const sideMo = new MutationObserver(sync)
-    sideMo.observe(root, { attributes: true, attributeFilter: ['data-sidebar-side'] })
-    mq.addEventListener('change', sync)
-    root.style.setProperty('--sidebar-w', `${clampW(prefs.value.sidebarWidth ?? 264)}px`)
-    sync()
-
-    return () => {
-      ro.disconnect()
-      sideMo.disconnect()
-      mq.removeEventListener('change', sync)
-      handle.removeEventListener('pointerdown', onDown)
-      handle.removeEventListener('pointermove', onMove)
-      handle.removeEventListener('pointerup', onUp)
-      handle.removeEventListener('pointercancel', onUp)
-      handle.remove()
-      window.clearTimeout(persistTimer)
-      document.body.style.cursor = ''
-      document.body.style.userSelect = ''
-    }
-  }, [])
 
   /** Persist view state to the hash query (replaceState — no history spam). */
   const syncHash = useCallback((patch: { view?: HashView; n?: number; date?: string }) => {
@@ -872,10 +709,7 @@ export function CalendarView() {
     [customN, nDays],
   )
 
-  // §22 time-axis zoom (timeGrid views only): prefs.zoom = minutes.
   const isTimeGrid = fcView.startsWith('timeGrid')
-  const zoomMin = zoomRung(prefs.value.zoom)
-  const zoomIdx = ZOOM_LADDER.indexOf(zoomMin)
 
   // §agenda: the 'agenda' view renders <AgendaList> instead of the FC host
   // (the instance stays mounted, hidden); its window grows without bound.
@@ -963,18 +797,6 @@ export function CalendarView() {
             <button type="button" class="btn btn-xs" aria-label="More days" title="More days (+)" disabled={nDays >= N_MAX} onClick={() => stepNDays(1)}>+</button>
           </div>
         )}
-        {!isAgenda && isTimeGrid && (
-          <div
-            class="flex shrink-0 items-center gap-0.5 rounded-full border border-border bg-surface-2 py-0.5 pr-1 pl-2 max-md:hidden"
-            role="group"
-            aria-label="Zoom time axis"
-            title={`Zoom time axis — ${ZOOM_NAMES[zoomMin] ?? `${zoomMin} min`} (${zoomMin} min slots)`}
-          >
-            <button type="button" class="btn btn-xs" aria-label="Zoom out time axis" title="Zoom out (coarser time axis)" disabled={zoomIdx === 0} onClick={() => stepZoom(-1)}>−</button>
-            <span class="min-w-8 px-0.5 text-center text-xs">Zoom</span>
-            <button type="button" class="btn btn-xs" aria-label="Zoom in time axis" title="Zoom in (finer time axis)" disabled={zoomIdx === ZOOM_LADDER.length - 1} onClick={() => stepZoom(1)}>+</button>
-          </div>
-        )}
         {isAgenda && (
           // §agenda chip: grouping only (Day|Calendar) — range chips and the
           // Todos ✓ toggle are gone (infinite window; the sidebar owns the
@@ -992,7 +814,7 @@ export function CalendarView() {
           </>
         )}
       </div>
-      <div ref={gridWrapRef} class="wycal-stage-wrap min-h-0 flex-1">
+      <div class="wycal-stage-wrap min-h-0 flex-1">
         {initialSyncing ? (
           <div class="flex h-full flex-col justify-center gap-3 p-6" aria-busy="true">
             <p class="sr-only">Loading calendar…</p>
@@ -1006,6 +828,11 @@ export function CalendarView() {
               (date, view, feed) survives agenda round-trips; AgendaList takes
               the stage while view=agenda. */}
           <div ref={stageRef} class={`relative h-full${isAgenda ? ' hidden' : ''}`}>
+          {/* Time-axis law (§grid): fixed 30-min slots, drag/select snaps to
+              quarter hours, hourly labels, axis at natural height (scrolls,
+              never squishes), overlaps become full-width side-by-side lanes
+              capped at 3 stacks, short events floored at 24px. Fixed grid —
+              no axis scaling. */}
           <FullCalendar
           ref={calendarRef}
           plugins={PLUGINS}
@@ -1018,12 +845,15 @@ export function CalendarView() {
           firstDay={prefs.value.firstDay}
           expandRows
           nowIndicator
-          slotDuration={`00:${String(zoomMin).padStart(2, '0')}:00`}
+          slotDuration="00:30:00"
           slotLabelInterval="01:00:00"
+          snapDuration="00:15:00"
+          eventMinHeight={24}
+          eventMaxStack={3}
+          slotEventOverlap={false}
           scrollTime="07:00"
           businessHours={{ daysOfWeek: [1, 2, 3, 4, 5], startTime: '08:00', endTime: '18:00' }}
           dayMaxEvents
-          eventMaxStack={4}
           weekNumbers={false}
           allDayMaintainDuration={false}
           slotLabelFormat={formats.slotLabelFormat}
@@ -1032,13 +862,13 @@ export function CalendarView() {
           selectable
           editable
           selectMirror
-          snapDuration={`00:${String(snapFor(zoomMin)).padStart(2, '0')}:00`}
           navLinks
           navLinkDayClick={onNavLinkDay}
           navLinkWeekClick={onNavLinkWeek}
           selectAllow={onSelectAllow}
           unselect={endDragTip}
           events={events}
+          eventContent={renderEventContent}
           eventDidMount={onEventMount}
           datesSet={onDatesSet}
           select={onSelect}
@@ -1048,16 +878,6 @@ export function CalendarView() {
           eventResize={onEventResize}
           eventReceive={onEventReceive}
           />
-          {zoomPill && (
-            // §22: transient zoom feedback over the grid's top-right (800ms),
-            // e.g. "15 min slots" after a ⌘/Ctrl+wheel step.
-            <div
-              role="status"
-              class="card pointer-events-none absolute top-2 right-3 z-30 rounded-full px-2.5 py-1 text-xs text-fg-strong tabular-nums shadow-[var(--shadow-1)]"
-            >
-              {zoomPill}
-            </div>
-          )}
           {dragTip && (
             <div
               ref={dragTipRef}
@@ -1115,16 +935,6 @@ export function CalendarView() {
                   <button type="button" class="btn btn-sm" aria-label="Fewer days" disabled={nDays <= N_MIN} onClick={() => stepNDays(-1)}>−</button>
                   <span class="min-w-12 text-center text-xs tabular-nums" aria-live="polite">{nDays} days</span>
                   <button type="button" class="btn btn-sm" aria-label="More days" disabled={nDays >= N_MAX} onClick={() => stepNDays(1)}>+</button>
-                </div>
-              </div>
-            )}
-            {isTimeGrid && (
-              <div class="flex items-center justify-between gap-2" role="group" aria-label="Zoom time axis">
-                <span class="text-xs text-muted">Zoom</span>
-                <div class="flex items-center gap-1">
-                  <button type="button" class="btn btn-sm" aria-label="Zoom out time axis" disabled={zoomIdx === 0} onClick={() => stepZoom(-1)}>−</button>
-                  <span class="min-w-14 text-center text-xs tabular-nums">{zoomMin} min</span>
-                  <button type="button" class="btn btn-sm" aria-label="Zoom in time axis" disabled={zoomIdx === ZOOM_LADDER.length - 1} onClick={() => stepZoom(1)}>+</button>
                 </div>
               </div>
             )}

@@ -4,9 +4,8 @@
  * (mobile drawer), the [Schedule | Agenda | Contacts] mode switcher bound to
  * the hash (schedule restores prefs.lastScheduleView, default week; agenda is
  * `#/?view=agenda`; contacts is `#/contacts`), wycal wordmark, spacer, theme
- * toggle (light → dark → auto, persisted via the prefs store), contacts +
- * settings links, and the `?` keyboard-shortcuts button.
- *
+ * toggle (light → dark → auto, persisted via the prefs store), settings link,
+ * and the `?` keyboard-shortcuts button.
  * Search lives at the top of the sidebar now (SidebarSearch); '/' and ⌘K are
  * dispatched by app.tsx §16 and focused there. View-switching keys belong to
  * the calendar view.
@@ -34,10 +33,10 @@ const SCHEDULE_VIEWS: Record<string, true> = {
   day: true, '3d': true, '5d': true, week: true, '2weeks': true, month: true,
 };
 
-const MODES: Array<{ id: ShellMode; label: string }> = [
-  { id: 'schedule', label: 'Schedule' },
-  { id: 'agenda', label: 'Agenda' },
-  { id: 'contacts', label: 'Contacts' },
+const MODES: Array<{ id: ShellMode; label: string; icon: IconComponent }> = [
+  { id: 'schedule', label: 'Schedule', icon: Icon.calendar },
+  { id: 'agenda', label: 'Agenda', icon: Icon.menu },
+  { id: 'contacts', label: 'Contacts', icon: Icon.users },
 ];
 
 /** Current shell mode from the hash (settings/saved-composites lean schedule). */
@@ -89,13 +88,14 @@ export function Header(props: { onMenu: () => void }) {
           <button
             key={m.id}
             type="button"
-            class="mode-seg-btn"
+            class="mode-seg-btn flex items-center gap-1.5"
             aria-pressed={mode === m.id}
             title={`${m.label} mode`}
             onClick={() => {
               window.location.hash = hashForMode(m.id);
             }}
           >
+            <m.icon size={14} />
             {m.label}
           </button>
         ))}
@@ -118,15 +118,6 @@ export function Header(props: { onMenu: () => void }) {
       >
         <ThemeIcon size={16} />
       </button>
-      <a
-        class="btn btn-ghost btn-sm icon-btn shrink-0"
-        href={`#${ROUTES.contacts}`}
-        aria-label="Contacts"
-        title="Contacts"
-        aria-current={path === ROUTES.contacts ? 'page' : undefined}
-      >
-        <Icon.users size={16} />
-      </a>
       <a
         class="btn btn-ghost btn-sm icon-btn shrink-0"
         href={`#${ROUTES.settings}`}
