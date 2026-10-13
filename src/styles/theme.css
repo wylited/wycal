@@ -645,3 +645,21 @@ body {
     box-shadow: var(--shadow-2);
   }
 }
+
+/* --- §26 Horizontal tag-chip rows (AgendaFilterBlock + ContactsSidebar):
+   one scrollable, non-wrapping row style for multiselect tag chips. The edge
+   mask fades the first/last 12px so clipped chips visibly bleed off both
+   edges — without it users can't tell the row scrolls. */
+.chip-row {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 12px, #000 calc(100% - 12px), transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 12px, #000 calc(100% - 12px), transparent);
+}
+
+.chip-row::-webkit-scrollbar {
+  height: 4px;
+}

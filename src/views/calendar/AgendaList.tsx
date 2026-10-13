@@ -11,27 +11,32 @@
  * (stores/agendaFilters signals + prefs.agendaEvents), read here via signal
  * values so chip clicks re-render the list.
  *
- * Row contract: muted time column ('All day' for all-day rows), color dot +
- * title for events, a status checkbox for todos (toggleDone in place,
- * completed struck-through muted). Row clicks open the same detail popovers
- * the FC grid uses, via the onEventClick/onTodoClick props CalendarView wires.
+ * Day grouping: chronological day sections; rows are muted time + color dot +
+ * title (todos: status checkbox, completed struck-through muted) + the
+ * ` (CalendarName)` suffix. Calendar grouping (§agenda-kanban): a
+ * horizontally scrolling kanban — one column per visible calendar
+ * (prefs.calendarOrder first, then collection order; header drag swaps the
+ * order), day sections inside, rows time+title only (the column IS the
+ * calendar), first 10 rows per column behind a 'Show N more' expander.
+ * Row clicks open the same detail popovers the FC grid uses, via the
+ * onEventClick/onTodoClick props CalendarView wires.
  */
 import type { JSX } from 'preact'
-import { useEffect, useRef } from 'preact/hooks'
+import { useEffect, useRef, useState } from 'preact/hooks'
 import { addDays, dayKey, fmtTime } from '../../lib/util/date'
 import {
   agendaDayLabel,
-  agendaShortDay,
   collectAgendaItems,
   groupByCalendar,
   groupByDay,
+  orderedCalendars,
   type AgendaGroup,
   type AgendaItem,
 } from '../../lib/agenda/agendaModel'
 import { occurrences, revision as eventRevision, type EventRecord } from '../../stores/events'
 import { collectionColor, collections, isCalendarVisible, visibilityVersion } from '../../stores/calendars'
 import { isTodoDone, revision as todoRevision, todos, toggleDone, type TodoRecord } from '../../stores/todos'
-import { prefs } from '../../stores/prefs'
+import { prefs, setPrefs } from '../../stores/prefs'
 import { agendaFilters } from '../../stores/agendaFilters' // sidebar filter chips (N1): status/priority computed, tags signal
 import { Icon } from '../../ui/icons'
 
@@ -52,12 +57,16 @@ export interface AgendaListProps {
   onTodoClick: (todo: TodoRecord, el: HTMLElement) => void
 }
 
-/** One agenda row: [day tag] [time] [dot|checkbox] title (CalendarName). */
+/**
+ * One agenda row: [time] [dot|checkbox] title (CalendarName). Day mode keeps
+ * the color dot + calendar suffix; `bare` (kanban column) renders time+title
+ * only — the column IS the calendar (todos keep their checkbox either way).
+ */
 function AgendaRow(props: {
   item: AgendaItem
   hour12: boolean
-  /** Calendar grouping labels every row with its day ('Mon 13'). */
-  showDay: boolean
+  /** Kanban column mode: no dot, no (CalendarName) suffix. */
+  bare?: boolean
   onEventClick: (record: EventRecord, el: HTMLElement) => void
   onTodoClick: (todo: TodoRecord, el: HTMLElement) => void
 }) {
@@ -79,10 +88,11 @@ function AgendaRow(props: {
         open(e.currentTarget)
       }}
     >
-      {props.showDay && <span class="wycal-agenda-when tabular-nums">{agendaShortDay(item.day)}</span>}
       <span class="wycal-agenda-when tabular-nums">{item.allDay ? 'All day' : fmtTime(item.when, props.hour12)}</span>
       {item.kind === 'event' ? (
-        <span class="chip-dot shrink-0" style={{ backgroundColor: item.color }} aria-hidden="true" />
+        props.bare ? null : (
+          <span class="chip-dot shrink-0" style={{ backgroundColor: item.color }} aria-hidden="true" />
+        )
       ) : (
         <input
           type="checkbox"
@@ -94,8 +104,90 @@ function AgendaRow(props: {
         />
       )}
       <span class={`wycal-agenda-title${done ? ' todo-done' : ''}`}>{item.record.data.summary}</span>
-      {item.calendarName && <span class="wycal-agenda-cal">({item.calendarName})</span>}
+      {!props.bare && item.calendarName && <span class="wycal-agenda-cal">({item.calendarName})</span>}
     </div>
+  )
+}
+
+/** Kanban columns show the first KANBAN_ROW_CAP rows; 'Show N more' expands. */
+const KANBAN_ROW_CAP = 10
+
+/**
+ * One kanban column (§agenda-kanban): a visible calendar as a day-sectioned
+ * list, capped at the first KANBAN_ROW_CAP rows until expanded (per-column
+ * state). The header is the drag handle: dragover on another header swaps the
+ * two columns' order in prefs.calendarOrder (onHeaderDragOver).
+ */
+function CalColumn(props: {
+  name: string
+  color?: string
+  items: AgendaItem[]
+  hour12: boolean
+  todayKey: string
+  onEventClick: (record: EventRecord, el: HTMLElement) => void
+  onTodoClick: (todo: TodoRecord, el: HTMLElement) => void
+  onHeaderDragStart: () => void
+  onHeaderDragEnd: () => void
+  onHeaderDragOver: () => void
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const total = props.items.length
+  let shown = 0
+  const sections = groupByDay(props.items)
+    .map((sec) => {
+      const take = expanded ? sec.items : sec.items.slice(0, Math.max(0, KANBAN_ROW_CAP - shown))
+      shown += take.length
+      return { ...sec, items: take }
+    })
+    .filter((sec) => sec.items.length > 0)
+  return (
+    <section class="flex w-72 shrink-0 flex-col overflow-hidden rounded-xl border border-(--border)">
+      <header
+        draggable
+        onDragStart={(e) => {
+          if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
+          props.onHeaderDragStart()
+        }}
+        onDragEnd={props.onHeaderDragEnd}
+        onDragOver={(e) => {
+          e.preventDefault()
+          props.onHeaderDragOver()
+        }}
+        title={`${props.name} — drag to reorder`}
+        class="flex cursor-grab items-center gap-2 border-b border-(--border) px-3 py-2 active:cursor-grabbing"
+      >
+        <span class="h-4 w-1 shrink-0 rounded-full" style={{ backgroundColor: props.color }} aria-hidden="true" />
+        <span class="min-w-0 truncate text-sm font-semibold">{props.name}</span>
+        <span class="ml-auto shrink-0 text-xs tabular-nums text-muted">({total})</span>
+      </header>
+      {sections.map((sec) => (
+        <div class="agenda-day" key={sec.key}>
+          <header class="agenda-day-head">
+            <h2>{agendaDayLabel(sec.key, props.todayKey)}</h2>
+            <span class="agenda-day-count tabular-nums">{sec.items.length}</span>
+          </header>
+          {sec.items.map((item) => (
+            <AgendaRow
+              key={item.record.key}
+              item={item}
+              bare
+              hour12={props.hour12}
+              onEventClick={props.onEventClick}
+              onTodoClick={props.onTodoClick}
+            />
+          ))}
+        </div>
+      ))}
+      {!expanded && total > KANBAN_ROW_CAP && (
+        <button
+          type="button"
+          class="mx-3 mb-3 mt-1 rounded-md px-2 py-1.5 text-xs text-muted hover:bg-surface-2"
+          onClick={() => setExpanded(true)}
+        >
+          Show {total - KANBAN_ROW_CAP} more
+        </button>
+      )}
+    </section>
   )
 }
 
@@ -146,7 +238,26 @@ export function AgendaList(props: AgendaListProps) {
     return c ? { name: c.name, color: collectionColor(c) } : undefined
   }
   const items = collectAgendaItems({ today, windowDays: props.windowDays, events, todos: todoRecs, calInfo, filters })
-  const rowProps = { hour12, onEventClick: props.onEventClick, onTodoClick: props.onTodoClick }
+
+  // §agenda-kanban inputs: visible calendar urls (collection order; the kanban
+  // reorders via prefs.calendarOrder) and the drag-reorder swap. The dragged
+  // column's url lives in a ref; hovering another header swaps the two in
+  // prefs.calendarOrder (persisted via setPrefs). Repeated dragover on the
+  // same pair no-ops — after the swap the hovered header IS the dragged one.
+  const calUrls = collections.value
+    .filter((c) => c.kind === 'calendar' && isCalendarVisible(c.url))
+    .map((c) => c.url)
+  const dragUrl = useRef<string | null>(null)
+  const swapCalOrder = (target: string): void => {
+    const dragged = dragUrl.current
+    if (!dragged || dragged === target) return
+    const list = orderedCalendars(calUrls, prefs.value.calendarOrder)
+    const a = list.indexOf(dragged)
+    const b = list.indexOf(target)
+    if (a < 0 || b < 0) return
+    ;[list[a], list[b]] = [list[b], list[a]]
+    setPrefs({ calendarOrder: list })
+  }
 
   let body: JSX.Element | JSX.Element[]
   if (items.length === 0) {
@@ -157,18 +268,37 @@ export function AgendaList(props: AgendaListProps) {
       </div>
     )
   } else if (props.group === 'calendar') {
-    body = groupByCalendar(items).map((sec) => (
-      <section class="agenda-day" key={sec.url}>
-        <header class="agenda-cal-head">
-          <span class="chip-dot shrink-0" style={{ backgroundColor: sec.color }} title={sec.name} />
-          <span class="agenda-cal-name">{sec.name}</span>
-          <span class="agenda-cal-count tabular-nums">({sec.items.length})</span>
-        </header>
-        {sec.items.map((item) => (
-          <AgendaRow key={item.record.key} item={item} showDay {...rowProps} />
-        ))}
-      </section>
-    ))
+    // §agenda-kanban: one column per visible calendar — prefs.calendarOrder
+    // first, then collection order; the sentinel stays at the row bottom.
+    const orderedUrls = orderedCalendars(calUrls, prefs.value.calendarOrder)
+    const byUrl = new Map(groupByCalendar(items).map((sec): [string, typeof sec] => [sec.url, sec]))
+    body = (
+      <div class="flex h-full min-h-0 gap-4 overflow-x-auto px-1 pb-1">
+        {orderedUrls.map((url) => {
+          const cal = collections.value.find((c) => c.url === url)
+          const sec = byUrl.get(url)
+          return (
+            <CalColumn
+              key={url}
+              name={cal?.name ?? url}
+              color={cal ? collectionColor(cal) : undefined}
+              items={sec?.items ?? []}
+              hour12={hour12}
+              todayKey={todayKey}
+              onEventClick={props.onEventClick}
+              onTodoClick={props.onTodoClick}
+              onHeaderDragStart={() => {
+                dragUrl.current = url
+              }}
+              onHeaderDragEnd={() => {
+                dragUrl.current = null
+              }}
+              onHeaderDragOver={() => swapCalOrder(url)}
+            />
+          )
+        })}
+      </div>
+    )
   } else {
     body = groupByDay(items).map((sec) => (
       <section class="agenda-day" key={sec.key}>
@@ -177,7 +307,13 @@ export function AgendaList(props: AgendaListProps) {
           <span class="agenda-day-count tabular-nums">{sec.items.length}</span>
         </header>
         {sec.items.map((item) => (
-          <AgendaRow key={item.record.key} item={item} showDay={false} {...rowProps} />
+          <AgendaRow
+            key={item.record.key}
+            item={item}
+            hour12={hour12}
+            onEventClick={props.onEventClick}
+            onTodoClick={props.onTodoClick}
+          />
         ))}
       </section>
     ))

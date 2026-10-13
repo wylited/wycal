@@ -10,7 +10,9 @@ import { Icon } from '../../ui/icons'
 import { ContactEditor } from './ContactEditor'
 import { ContactAvatar, ContactDetailPopover, displayOrg } from './ContactDetailPopover'
 
-/** Contacts pane (design.md §5): search, card grid, click-to-inspect popover. */
+/** Contacts pane (design.md §5): search, card grid, click-to-inspect popover.
+ *  Contact creation lives solely in the sidebar's unified New-item button
+ *  (it dispatches `wycal:newcontact`, handled below) — no main-view duplicate. */
 export function ContactsView() {
   const [query, setQuery] = useState('')
   const [detail, setDetail] = useState<{ href: string; anchor: HTMLElement } | null>(null)
@@ -96,11 +98,11 @@ export function ContactsView() {
     body = (
       <div class="flex h-full flex-col items-center justify-center gap-3 text-muted">
         <Icon.users size={24} />
-        <p class="text-sm">No contacts yet</p>
-        <button type="button" class="btn btn-primary" onClick={openCreate} disabled={!addressbookUrl} title="New contact (C)">
-          <Icon.plus size={16} />
-          New contact
-        </button>
+        <p class="text-sm">
+          {addressbookUrl === undefined
+            ? 'Connect an account with an address book to add contacts'
+            : 'No contacts yet — use “New contact” in the sidebar'}
+        </p>
       </div>
     )
   } else if (list.length === 0) {
@@ -154,17 +156,6 @@ export function ContactsView() {
             onInput={(e) => setQuery(e.currentTarget.value)}
           />
         </div>
-        <div class="flex-1" />
-        <button
-          type="button"
-          class="btn btn-primary"
-          onClick={openCreate}
-          disabled={!addressbookUrl}
-          title={addressbookUrl ? 'New contact (C)' : 'Connect an account with an address book first'}
-        >
-          <Icon.plus size={16} />
-          New contact
-        </button>
       </div>
       <div class="flex min-h-0 flex-1">
         <div ref={listBodyRef} class="min-w-0 flex-1 overflow-y-auto p-4">{body}</div>

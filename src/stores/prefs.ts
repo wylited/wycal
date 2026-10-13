@@ -44,6 +44,9 @@ interface Prefs {
   agendaStatusFilter?: AgendaStatusFilter;
   /** Agenda todo priority filter (§nav-revamp); absent → 'all'. */
   agendaPriorityFilter?: AgendaPriorityFilter;
+  /** Calendar href order for the agenda kanban + future uses; absent →
+   *  collection order. */
+  calendarOrder?: string[];
   /** Last non-agenda schedule sub-view; the mode switcher restores it. Absent → 'week'. */
   lastScheduleView?: string;
   /** Sidebar column edge (§nav-revamp); absent → 'right'. */
@@ -139,6 +142,9 @@ function loadPrefs(): Prefs {
         s.agendaPriorityFilter === 'A' || s.agendaPriorityFilter === 'B' || s.agendaPriorityFilter === 'C'
           ? s.agendaPriorityFilter
           : DEFAULT_PREFS.agendaPriorityFilter,
+      calendarOrder: Array.isArray(s.calendarOrder)
+        ? s.calendarOrder.filter((u): u is string => typeof u === 'string' && u.length > 0)
+        : undefined,
       lastScheduleView:
         typeof s.lastScheduleView === 'string' && SCHEDULE_VIEWS[s.lastScheduleView]
           ? s.lastScheduleView

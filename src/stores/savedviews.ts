@@ -176,7 +176,8 @@ const FC_TO_V2: Record<string, SavedViewV2Name> = {
   timeGridDay: 'day',
   timeGridNDays: 'ndays',
   timeGridWeek: 'week',
-  timeGridTwoWeeks: '2week',
+  dayGridTwoWeeks: '2week', // §w13: 2weeks became a dayGrid view
+  timeGridTwoWeeks: '2week', // stale stored defaultViews still resolve
   dayGridMonth: 'month',
   listAgenda: 'agenda',
 }

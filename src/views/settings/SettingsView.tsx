@@ -21,7 +21,7 @@ const DEFAULT_SERVER_URL = `${location.origin}/dav`;
 const VIEW_OPTIONS = [
   { value: 'timeGridDay', label: 'Day' },
   { value: 'timeGridWeek', label: 'Week' },
-  { value: 'timeGridTwoWeeks', label: '2 Weeks' },
+  { value: 'dayGridTwoWeeks', label: '2 Weeks' },
   { value: 'dayGridMonth', label: 'Month' },
   { value: 'listAgenda', label: 'Agenda' },
 ] as const;
@@ -63,14 +63,15 @@ function LabeledGroup(props: { label: string; id: string; children: ComponentChi
   );
 }
 
-/** Sync dot + text per design.md §5: color never the only signal. */
+/** Per-account sync chip (design.md §5): dot + text — 'Synced', pulsing
+ *  'Syncing…', or 'Error' (message on hover here and inline in the row). */
 function SyncStatus(props: { accountId: string }) {
   const st = syncState.value.get(props.accountId);
   const dot =
     st?.state === 'ok'
       ? 'bg-success'
       : st?.state === 'syncing'
-        ? 'bg-warning'
+        ? 'animate-pulse bg-warning'
         : st?.state === 'error'
           ? 'bg-danger'
           : 'bg-surface-3';
@@ -83,7 +84,10 @@ function SyncStatus(props: { accountId: string }) {
           ? 'Error'
           : 'Not synced';
   return (
-    <span class="flex items-center gap-2 text-xs text-muted">
+    <span
+      class="flex items-center gap-2 text-xs text-muted"
+      title={st?.state === 'error' && st.message ? st.message : undefined}
+    >
       <span class={`size-2 shrink-0 rounded-full ${dot}`} aria-hidden="true" />
       <span>{label}</span>
     </span>

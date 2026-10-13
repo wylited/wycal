@@ -560,8 +560,9 @@
     min-height: 18px;
   }
 
-  /* --- Compact timeGrid event line (§grid): one flex line — 10px time +
-     ellipsizing title — so 15-min events (24px, eventMinHeight floor) and
+  /* --- Event line (§grid): one flex line — ellipsizing title, optionally a
+     10px lead time (dayGrid/list only; the timeGrid's left axis already shows
+     times) — so 15-min events (24px, eventMinHeight floor), month chips and
      narrow overlap lanes stay readable. min-width: 0 lets the flex children
      shrink so text-overflow actually engages inside FC's lane boxes. --- */
   .fc .fc-event-main.fc-event-main {
@@ -576,10 +577,11 @@
     overflow: hidden;
     white-space: nowrap;
   }
-  .fc .wycal-ev-time {
+  .fc .wycal-ev-dg-time {
     font-size: 10px;
     opacity: 0.8;
     flex-shrink: 0;
+    margin-right: 4px;
   }
   .fc .wycal-ev-title {
     overflow: hidden;
@@ -878,55 +880,11 @@ html[data-sidebar-size='large'] .app-sidebar .mm-day {
   color: var(--muted);
 }
 
-.agenda-cal {
-  margin-top: 12px;
-}
-
-/* '[Work] (3)'-style calendar group header, left edge aligned with row text. */
-.agenda-cal-head {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-6);
-  padding: 0 10px;
-  font-size: var(--text-xs);
-  line-height: 1.6;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.agenda-cal-name {
-  color: var(--fg);
-  font-weight: 500;
-}
-
-/* Sidebar footer Tasks link: checkbox-glyph tile + label; aria-current gives
-   the active-route state (same pattern as the header icon buttons). */
-.nav-tasks-ico {
-  display: grid;
-  place-items: center;
-  width: 16px;
-  height: 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  color: var(--muted);
-}
-
-.chip[aria-current='page'] {
-  background: var(--surface-3);
-  color: var(--fg-strong);
-}
-
-.chip[aria-current='page'] .nav-tasks-ico {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-
 /* --- Agenda view (§agenda): AgendaList under the calendar toolbar. Reuses
-   the Tasks-view org-super-agenda classes (.agenda-day/.agenda-day-head/
-   .agenda-cal-head); everything new is scoped under .wycal-agenda so the
-   Tasks view is untouched. Rhythm mirrors §9.4: 16px between day sections,
-   sticky day headers, 34px rows with surface-2 hover. --- */
+   the Tasks-view org-super-agenda classes (.agenda-day/.agenda-day-head);
+   everything new is scoped under .wycal-agenda so the Tasks view is
+   untouched. Rhythm mirrors §9.4: 16px between day sections, sticky day
+   headers, 34px rows with surface-2 hover. --- */
 
 .wycal-agenda {
   padding: var(--sp-8) 12px var(--sp-20);
@@ -940,16 +898,6 @@ html[data-sidebar-size='large'] .app-sidebar .mm-day {
   z-index: 1;
   background: var(--bg);
   padding: var(--sp-4) 0;
-}
-
-.wycal-agenda .agenda-cal-head {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  background: var(--bg);
-  padding: var(--sp-4) 0;
-  font-size: var(--text-sm);
-  line-height: 1.8;
 }
 
 .wycal-agenda-row {
@@ -1125,14 +1073,6 @@ html[data-sidebar-size='large'] .app-sidebar .mm-day {
   border-color: var(--accent);
   background: var(--accent-soft);
   color: var(--accent);
-}
-
-.sb-chip-clear {
-  display: grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  padding: 0;
 }
 
 /* Resizable section stack (Sidebar): unset sections take their content

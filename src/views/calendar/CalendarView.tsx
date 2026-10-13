@@ -58,7 +58,7 @@ type CalendarHashState = { view: HashView; date?: string; n: number; q: string }
 /** Hash view name → FullCalendar view type (CONTRACTS §5 mapping). */
 const HASH_TO_FC: Record<HashView, string> = {
   day: 'timeGridDay', '3d': 'timeGridNDays', '5d': 'timeGridNDays',
-  week: 'timeGridWeek', '2weeks': 'timeGridTwoWeeks', month: 'dayGridMonth', agenda: 'listAgenda',
+  week: 'timeGridWeek', '2weeks': 'dayGridTwoWeeks', month: 'dayGridMonth', agenda: 'listAgenda',
 }
 
 const N_MIN = 1
@@ -115,9 +115,11 @@ function writeHashState(s: CalendarHashState): void {
 
 const PLUGINS = [dayGridPlugin, timeGridPlugin, listPlugin, multiMonthPlugin, interactionPlugin]
 
-/** Custom views; timeGridNDays has NO duration — the top-level option drives it. */
+/** Custom views; dayGridTwoWeeks is a month-style grid stretched to 2 weeks
+ *  (matches what month gets: dayMaxEvents, navLinks); timeGridNDays has NO
+ *  duration — the top-level option drives it. */
 const VIEWS = {
-  timeGridTwoWeeks: { type: 'timeGrid', duration: { weeks: 2 } },
+  dayGridTwoWeeks: { type: 'dayGrid', duration: { weeks: 2 } },
   timeGridNDays: { type: 'timeGrid' },
   // displayEventEnd: true undoes the global start-only pill time here — list
   // rows have a dedicated time column where "start - end" reads fine.
@@ -178,18 +180,26 @@ function onEventMount(info: EventMountArg): void {
 }
 
 /**
- * Compact single-line timeGrid event content (§grid): 10px time + title on one
- * line, ellipsizing in narrow overlap lanes — a 15-min event is barely taller
- * than FC's default two-line stack, which clipped. All-day lanes render the
- * title only (no time span). dayGrid/list views return undefined and keep FC's
- * defaults. Module-level = stable reference (FC handler props never churn).
+ * Single-line event content for EVERY view (§grid): the generator must always
+ * return vdom — `undefined` blanks the chip outright (FC's default rendering
+ * never kicks in through the preact wrapper; month view showed invisible
+ * events). timeGrid timed pills and all-day lanes render the title only (the
+ * timeGrid's left axis already shows the time); dayGrid grids (month/2weeks)
+ * and list rows lead with a 10px `time + title`, the only places the time
+ * isn't otherwise visible. Module-level = stable reference (FC handler props
+ * never churn).
  */
 function renderEventContent(arg: EventContentArg) {
-  if (!arg.view.type.startsWith('timeGrid')) return undefined
-  if (arg.event.allDay) return <div class="wycal-ev-title">{arg.event.title}</div>
+  if (arg.event.allDay || arg.view.type.startsWith('timeGrid')) {
+    return (
+      <div class="wycal-ev-line">
+        <span class="wycal-ev-title">{arg.event.title}</span>
+      </div>
+    )
+  }
   return (
     <div class="wycal-ev-line">
-      <span class="wycal-ev-time">{arg.timeText}</span>
+      <span class="wycal-ev-dg-time">{arg.timeText}</span>
       <span class="wycal-ev-title">{arg.event.title}</span>
     </div>
   )
@@ -719,14 +729,6 @@ export function CalendarView() {
   const agendaGroupPref = prefs.value.agendaGroup ?? 'day'
   const agendaGroup: AgendaGroup = agendaGroupPref === 'flat' ? 'day' : agendaGroupPref
   const agendaTodos = prefs.value.agendaTodos ?? true
-  const agendaTitle = useMemo(() => {
-    const t = new Date()
-    t.setHours(0, 0, 0, 0)
-    // The first loaded day; '· …' once the window has grown past the initial
-    // one (§agenda infinite scroll keeps extending it).
-    const first = fmtDate(t, { weekday: true })
-    return agendaWindow > AGENDA_WINDOW_START ? `${first} · …` : first
-  }, [agendaWindow])
   // Date or grouping change → back to the initial 14-day window. (Switching
   // into agenda never resets: the grown window survives mode round-trips,
   // like the hidden FC grid's state.)
@@ -761,9 +763,7 @@ export function CalendarView() {
             </button>
           </>
         )}
-        {isAgenda ? (
-          <h2 class="min-w-0 truncate text-xl font-bold tabular-nums max-md:text-sm max-md:font-semibold">{agendaTitle}</h2>
-        ) : fcView === 'dayGridMonth' ? (
+        {isAgenda ? null : fcView === 'dayGridMonth' ? (
           // §9.2: in month view the period label splits into month + year dropdowns.
           <PeriodPickers
             cursor={cursor}

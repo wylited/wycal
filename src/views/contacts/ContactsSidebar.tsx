@@ -112,7 +112,7 @@ export default function ContactsSidebar() {
               </button>
             )}
           </div>
-          <div class="flex flex-nowrap gap-1 overflow-x-auto">
+          <div class="chip-row gap-1">
             {tags.map((tag) => (
               <button
                 key={tag}

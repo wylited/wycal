@@ -1,11 +1,11 @@
 /** @jsxImportSource preact */
 /**
  * App sidebar (design.md §4, §nav-revamp): a unified New-item button (label +
- * action per mode) and the search box on top, then per-mode content —
- * Schedule (mini-month, Calendars, saved views, Upcoming, Share availability,
- * accounts), Agenda (todo filter chips, Calendars, agenda saved views,
- * Upcoming), Contacts (ContactsSidebar) — with mini-month + accounts always
- * present. A non-empty search takes over the whole column (the section stack
+ * action per mode) and the search box on top, then mode-scoped content —
+ * Schedule (mini-month, Calendars, saved views, Upcoming, Share availability),
+ * Agenda (todo filters, Calendars, agenda saved views), Contacts (only the
+ * ContactsSidebar sections — no calendar UI). A non-empty search takes over
+ * the whole column (the section stack
  * is hidden until cleared). The stack sections are separated by draggable
  * separators (prefs.sidebarSectionHeights; double-click resets). Sidebar side
  * flips via prefs.sidebarSide; the old Size control is gone
@@ -14,7 +14,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { Fragment } from 'preact';
 import type { ComponentChildren } from 'preact';
-import { accounts } from '../../stores/accounts';
 import {
   collectionColor,
   collections,
@@ -67,7 +66,6 @@ const SECTION = {
   savedviews: 'sb-savedviews',
   upcoming: 'sb-upcoming',
   contacts: 'sb-contacts',
-  accounts: 'sb-accounts',
 } as const;
 
 /** Separator drag constraints (§nav-revamp): min 60px, max 70% of sidebar. */
@@ -86,47 +84,6 @@ function useMediaQuery(query: string): boolean {
     return () => mq.removeEventListener('change', onChange);
   }, [query]);
   return matches;
-}
-
-/** Per-account sync health dots + labels (design.md §5 loading states). */
-function AccountStatus() {
-  const states = syncState.value;
-  if (accounts.value.length === 0) {
-    return (
-      <div class="flex items-center gap-2 border-t border-border px-4 py-2.5 text-xs text-muted">
-        <span class="size-2 shrink-0 rounded-full bg-muted" aria-hidden="true" />
-        No account connected
-      </div>
-    );
-  }
-  return (
-    <div class="flex flex-col gap-1 border-t border-border px-4 py-2.5">
-      {accounts.value.map((account) => {
-        const state = states.get(account.id)?.state ?? 'syncing';
-        const detail =
-          state === 'ok'
-            ? 'Synced'
-            : state === 'syncing'
-              ? 'Syncing…'
-              : (states.get(account.id)?.message ?? 'Sync error');
-        return (
-          <div
-            key={account.id}
-            class="flex items-center gap-2 text-xs text-muted"
-            title={`${account.username} — ${detail}`}
-          >
-            <span
-              class={`size-2 shrink-0 rounded-full ${state === 'ok' ? 'bg-success' : 'bg-warning'}`}
-              aria-hidden="true"
-            />
-            <span class="min-w-0 truncate">
-              <span class="text-fg">{account.username}</span> · {detail}
-            </span>
-          </div>
-        );
-      })}
-    </div>
-  );
 }
 
 /** Common shape the saved-views section renders (schedule V2 or agenda). */
@@ -342,9 +299,10 @@ function SavedViewsSection(props: {
   );
 }
 
-/** Agenda-mode todo filters (§nav-revamp): Events/Todos toggles + status /
- *  priority / tag chips. Values live in prefs (saved views apply them) and
- *  the agendaFilters store; tag chips derive from todos' CATEGORIES. */
+/** Agenda-mode todo filters (§nav-revamp): Events/Todos toggles, single-select
+ *  status / priority segmented pills and multiselect tag chips sharing the
+ *  contacts sidebar's .chip look. Values live in prefs (saved views apply
+ *  them) and the agendaFilters store; tag chips derive from todos' CATEGORIES. */
 function AgendaFilterBlock() {
   const status = agendaFilters.status.value;
   const priority = agendaFilters.priority.value;
@@ -370,12 +328,12 @@ function AgendaFilterBlock() {
           Todos
         </button>
       </div>
-      <div class="flex flex-wrap items-center gap-1" role="group" aria-label="Todo status filter">
+      <div class="segmented self-start" role="group" aria-label="Todo status filter">
         {(['all', 'todo', 'doing', 'done'] as const).map((s) => (
           <button
             key={s}
             type="button"
-            class="sb-chip capitalize"
+            class="capitalize"
             aria-pressed={status === s}
             onClick={() => setAgendaStatus(s)}
           >
@@ -383,12 +341,11 @@ function AgendaFilterBlock() {
           </button>
         ))}
       </div>
-      <div class="flex flex-wrap items-center gap-1" role="group" aria-label="Todo priority filter">
+      <div class="segmented self-start" role="group" aria-label="Todo priority filter">
         {(['all', 'A', 'B', 'C'] as const).map((p) => (
           <button
             key={p}
             type="button"
-            class="sb-chip"
             aria-pressed={priority === p}
             onClick={() => setAgendaPriority(p)}
           >
@@ -397,29 +354,35 @@ function AgendaFilterBlock() {
         ))}
       </div>
       {allTags.length > 0 && (
-        <div class="flex flex-nowrap items-center gap-1 overflow-x-auto" role="group" aria-label="Todo tag filter">
-          {allTags.map((tag) => (
-            <button
-              key={tag}
-              type="button"
-              class="sb-chip shrink-0 whitespace-nowrap"
-              aria-pressed={tags.includes(tag)}
-              onClick={() => toggleAgendaTag(tag)}
-            >
-              {tag}
-            </button>
-          ))}
-          {tags.length > 0 && (
-            <button
-              type="button"
-              class="sb-chip sb-chip-clear"
-              title="Clear tag filter"
-              aria-label="Clear tag filter"
-              onClick={clearAgendaTags}
-            >
-              <Icon.x size={11} />
-            </button>
-          )}
+        <div class="flex flex-col gap-1" role="group" aria-label="Todo tag filter">
+          <div class="flex items-center gap-1">
+            <span class="text-xs font-semibold text-muted">Filter by tag</span>
+            <span class="min-w-0 flex-1" />
+            {tags.length > 0 && (
+              <button
+                type="button"
+                class="rounded-sm px-1.5 text-xs text-muted transition-colors hover:bg-surface-2 hover:text-fg-strong"
+                onClick={clearAgendaTags}
+                title="Clear tag filter"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+          <div class="chip-row gap-1">
+            {allTags.map((tag) => (
+              <button
+                key={tag}
+                type="button"
+                class="chip shrink-0 whitespace-nowrap"
+                aria-pressed={tags.includes(tag)}
+                title={tags.includes(tag) ? `Stop filtering by “${tag}”` : `Filter by “${tag}”`}
+                onClick={() => toggleAgendaTag(tag)}
+              >
+                {tag}
+              </button>
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -736,96 +699,101 @@ export function Sidebar(props: { open: boolean; onClose: () => void }) {
   const [shareOpen, setShareOpen] = useState(false);
   const [searchActive, setSearchActive] = useState(false);
 
-  // --- Section stack (§nav-revamp): order is mode-dependent; mini-month and
-  // accounts are always present.
+  // --- Section stack (§nav-revamp): mode-scoped. Schedule: the full stack
+  // (mini-month, calendars, saved views, upcoming). Agenda: calendars + its
+  // saved views (the filter block renders above the stack — no mini-month or
+  // upcoming). Contacts: ONLY the contacts sections (no calendar UI). Section
+  // ids stay stable, so §32 drag heights of hidden sections are just unused.
   const sections: Array<{ id: string; label: string; node: ComponentChildren }> = [];
-  sections.push({
-    id: SECTION.minmonth,
-    label: 'Mini-month',
-    node: (
-      <div class="px-3 pb-2 pt-2">
-        <MiniMonth routeDate={routeDate} />
-      </div>
-    ),
-  });
-  sections.push({
-    id: SECTION.calendars,
-    label: 'Calendars',
-    node: (
-      <nav class="min-h-0 px-2 pb-2" aria-label="Calendars">
-        <div class="px-2.5 pt-1 pb-1 text-xs font-medium text-muted">Calendars</div>
-        {calendars.length === 0 ? (
-          anySyncing ? (
-            <div role="status">
-              <span class="sr-only">Loading calendars…</span>
-              {[0, 1, 2, 3].map((i) => (
-                <div key={i} class="flex items-center gap-2 px-2.5 py-1.5" aria-hidden="true">
-                  <span class="size-2 animate-pulse rounded-full bg-surface-2" />
-                  <span
-                    class="h-3 flex-1 animate-pulse rounded-full bg-surface-2"
-                    style={{ animationDelay: `${i * 120}ms` }}
-                  />
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p class="px-2.5 py-1.5 text-sm text-muted">No calendars</p>
-          )
-        ) : (
-          calendars.map((cal, i) => (
-            <div key={cal.url} class="flex w-full items-center">
-              <label class="chip min-w-0 flex-1" title={cal.url}>
-                <input
-                  type="checkbox"
-                  class="size-3.5 shrink-0 accent-accent"
-                  checked={isCalendarVisible(cal.url)}
-                  onChange={() => toggleCalendar(cal.url)}
-                  aria-label={`Show ${cal.name}`}
-                  title={`Show ${cal.name} (${i + 1})`}
-                />
-                <span
-                  class="chip-dot"
-                  style={{ '--chip-color': collectionColor(cal) }}
-                  aria-hidden="true"
-                />
-                <span class="min-w-0 truncate">{cal.name}</span>
-              </label>
-              {cal.components.includes('VTODO') && (
-                <span
-                  class="shrink-0 p-1 text-muted"
-                  title="Supports tasks"
-                  role="img"
-                  aria-label="Supports tasks"
-                >
-                  <Icon.check size={12} />
-                </span>
-              )}
-              <button
-                type="button"
-                class="btn btn-ghost btn-sm icon-btn shrink-0"
-                title={`${cal.name} settings`}
-                aria-label={`${cal.name} settings`}
-                aria-haspopup="dialog"
-                onClick={(e) => setSettings({ url: cal.url, anchor: e.currentTarget })}
-              >
-                <Icon.settings size={13} />
-              </button>
-            </div>
-          ))
-        )}
-        <button
-          type="button"
-          class="btn btn-ghost btn-sm mt-1 w-full text-muted"
-          title="New calendar (Shift+C)"
-          onClick={() => setNewCalOpen(true)}
-        >
-          <Icon.plus size={13} />
-          New calendar
-        </button>
-      </nav>
-    ),
-  });
+  if (mode === 'schedule') {
+    sections.push({
+      id: SECTION.minmonth,
+      label: 'Mini-month',
+      node: (
+        <div class="px-3 pb-2 pt-2">
+          <MiniMonth routeDate={routeDate} />
+        </div>
+      ),
+    });
+  }
   if (mode !== 'contacts') {
+    sections.push({
+      id: SECTION.calendars,
+      label: 'Calendars',
+      node: (
+        <nav class="min-h-0 px-2 pb-2" aria-label="Calendars">
+          <div class="px-2.5 pt-1 pb-1 text-xs font-medium text-muted">Calendars</div>
+          {calendars.length === 0 ? (
+            anySyncing ? (
+              <div role="status">
+                <span class="sr-only">Loading calendars…</span>
+                {[0, 1, 2, 3].map((i) => (
+                  <div key={i} class="flex items-center gap-2 px-2.5 py-1.5" aria-hidden="true">
+                    <span class="size-2 animate-pulse rounded-full bg-surface-2" />
+                    <span
+                      class="h-3 flex-1 animate-pulse rounded-full bg-surface-2"
+                      style={{ animationDelay: `${i * 120}ms` }}
+                    />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p class="px-2.5 py-1.5 text-sm text-muted">No calendars</p>
+            )
+          ) : (
+            calendars.map((cal, i) => (
+              <div key={cal.url} class="flex w-full items-center">
+                <label class="chip min-w-0 flex-1" title={cal.url}>
+                  <input
+                    type="checkbox"
+                    class="size-3.5 shrink-0 accent-accent"
+                    checked={isCalendarVisible(cal.url)}
+                    onChange={() => toggleCalendar(cal.url)}
+                    aria-label={`Show ${cal.name}`}
+                    title={`Show ${cal.name} (${i + 1})`}
+                  />
+                  <span
+                    class="chip-dot"
+                    style={{ '--chip-color': collectionColor(cal) }}
+                    aria-hidden="true"
+                  />
+                  <span class="min-w-0 truncate">{cal.name}</span>
+                </label>
+                {cal.components.includes('VTODO') && (
+                  <span
+                    class="shrink-0 p-1 text-muted"
+                    title="Supports tasks"
+                    role="img"
+                    aria-label="Supports tasks"
+                  >
+                    <Icon.check size={12} />
+                  </span>
+                )}
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-sm icon-btn shrink-0"
+                  title={`${cal.name} settings`}
+                  aria-label={`${cal.name} settings`}
+                  aria-haspopup="dialog"
+                  onClick={(e) => setSettings({ url: cal.url, anchor: e.currentTarget })}
+                >
+                  <Icon.settings size={13} />
+                </button>
+              </div>
+            ))
+          )}
+          <button
+            type="button"
+            class="btn btn-ghost btn-sm mt-1 w-full text-muted"
+            title="New calendar (Shift+C)"
+            onClick={() => setNewCalOpen(true)}
+          >
+            <Icon.plus size={13} />
+            New calendar
+          </button>
+        </nav>
+      ),
+    });
     const scheduleRows: SavedViewRow[] =
       mode === 'schedule'
         ? savedViewsV2.value.map((v) => ({
@@ -898,11 +866,13 @@ export function Sidebar(props: { open: boolean; onClose: () => void }) {
         />
       ),
     });
-    sections.push({
-      id: SECTION.upcoming,
-      label: 'Upcoming',
-      node: <MiniAgenda />,
-    });
+    if (mode === 'schedule') {
+      sections.push({
+        id: SECTION.upcoming,
+        label: 'Upcoming',
+        node: <MiniAgenda />,
+      });
+    }
   } else {
     sections.push({
       id: SECTION.contacts,
@@ -910,11 +880,6 @@ export function Sidebar(props: { open: boolean; onClose: () => void }) {
       node: <ContactsSidebar />,
     });
   }
-  sections.push({
-    id: SECTION.accounts,
-    label: 'Accounts',
-    node: <AccountStatus />,
-  });
 
   const side = prefs.value.sidebarSide;
 

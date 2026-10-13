@@ -61,10 +61,16 @@ export function agendaDayLabel(day: string, todayKey: string): string {
   return day === todayKey ? `Today · ${label}` : label
 }
 
-/** Compact in-row day tag for the calendar grouping: 'Mon 13'. */
-export function agendaShortDay(day: string): string {
-  const d = new Date(`${day}T00:00:00`)
-  return `${d.toLocaleDateString(undefined, { weekday: 'short' })} ${d.getDate()}`
+/**
+ * Kanban column order (prefs.calendarOrder): hrefs named in `order` first (in
+ * that order; stale hrefs ignored), then the remaining urls in their given
+ * (collections) order — Array.sort's stability keeps ties at the input order.
+ */
+export function orderedCalendars(urls: readonly string[], order: readonly string[] | undefined): string[] {
+  const rank = new Map<string, number>()
+  ;(order ?? []).forEach((u, i) => rank.set(u, i))
+  const UNRANKED = Number.MAX_SAFE_INTEGER
+  return [...urls].sort((a, b) => (rank.get(a) ?? UNRANKED) - (rank.get(b) ?? UNRANKED))
 }
 
 /** Shared row order: day, then all-day first, then instant, then summary. */
