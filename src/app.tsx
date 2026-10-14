@@ -14,6 +14,8 @@ import {
   helpOpen,
   isDialogOpen,
   isEditableTarget,
+  isModalOpen,
+  peekClosePing,
   pingRouteView,
   requestNewEvent,
   sidebarOpen,
@@ -160,7 +162,12 @@ export function App() {
       // another dialog, but always closes itself.
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         if (isCommandPaletteOpen()) closeCommandPalette();
-        else if (!isDialogOpen()) openCommandPalette();
+        // Modals still block ⌘K, but a peek popover must not: ping it to
+        // close, then open the palette over the calendar (G4 wave-16).
+        else if (!isModalOpen()) {
+          peekClosePing.value++;
+          openCommandPalette();
+        }
         e.preventDefault();
         return;
       }
@@ -191,8 +198,12 @@ export function App() {
           // §wave-14: opens the command palette — a superset of the old
           // sidebar-search focus (typing searches the same engine; NL creates
           // events/tasks/contacts on top). The sidebar search box keeps its
-          // click focus (the palette owns the keyboard entry points).
-          if (!dialogUp) openCommandPalette();
+          // click focus (the palette owns the keyboard entry points). Like
+          // ⌘K: modals block it, peek popovers get pinged to close.
+          if (!isModalOpen()) {
+            peekClosePing.value++;
+            openCommandPalette();
+          }
           break;
         case 's':
           if (!dialogUp) window.location.hash = `#${ROUTES.settings}`;

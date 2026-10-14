@@ -109,6 +109,11 @@ const DAY_MS = 86_400_000
 /** Timed events default to 60m when the line parsed no duration (§16 Q). */
 const DEFAULT_EVENT_MINUTES = 60
 
+/** Inline failure line under the preview: toasts can go unseen while the
+ *  dialog stays open (store also toasts on rollback), so the dialog itself
+ *  must say the create failed. Shown on every failure path. */
+const CREATE_ERROR_TEXT = 'Create failed — check your password in Settings, then retry.'
+
 /** Strictly-next half-hour boundary (mirrors stores/ui nextHalfHour:
  *  14:00:23 → 14:30, 14:30:00 → 15:00). */
 function nextHalfHour(): Date {
@@ -172,6 +177,20 @@ function fmtTime(d: Date): string {
   return `${h12}:${String(d.getMinutes()).padStart(2, '0')}${h24 < 12 ? 'am' : 'pm'}`
 }
 
+/** '5:00pm–6:00pm', or '3:00pm – Thu 1:00pm' when the end lands on a
+ *  different local day (cross-midnight durations would otherwise show a
+ *  nonsensical '3:00pm–1:00pm'). Shared by describeEntry and describeFields
+ *  so the parse path and the palette-forwarded fields path agree. */
+function describeRange(start: Date, end: Date): string {
+  const sameDay =
+    start.getFullYear() === end.getFullYear() &&
+    start.getMonth() === end.getMonth() &&
+    start.getDate() === end.getDate()
+  return sameDay
+    ? `${fmtTime(start)}–${fmtTime(end)}`
+    : `${fmtTime(start)} – ${format(end, 'EEE ')}${fmtTime(end)}`
+}
+
 /**
  * Live hint ('→ Event · Fri Oct 16 · 5:00pm–6:00pm · Personal' / '→ Task ·
  * Fri Oct 16 · #A · +home · Personal') — computed from the same parse Enter
@@ -183,7 +202,7 @@ function describeEntry(kind: QuickAddKind, p: ParsedQuickAddLine, cal: { name: s
   if (kind === 'event') {
     const plan = planEvent(p)
     bits.push(format(plan.start, 'EEE MMM d'))
-    bits.push(plan.allDay ? 'all-day' : `${fmtTime(plan.start)}–${fmtTime(plan.end)}`)
+    bits.push(plan.allDay ? 'all-day' : describeRange(plan.start, plan.end))
   } else if (p.dueOrStart !== undefined) {
     bits.push(describeDue(p.dueOrStart))
   }
@@ -236,7 +255,7 @@ function describeFields(f: QuickAddFields, cal: { name: string } | undefined): s
       bits.push('all-day')
     } else {
       const end = new Date(start.getTime() + (f.durationMin ?? DEFAULT_EVENT_MINUTES) * 60_000)
-      bits.push(`${fmtTime(start)}–${fmtTime(end)}`)
+      bits.push(describeRange(start, end))
     }
     if (f.rrule !== undefined) bits.push(describeRrule(f.rrule))
     if (f.location !== undefined && f.location !== '') bits.push(`@${f.location}`)
@@ -262,6 +281,7 @@ function QuickAddCard(props: { initial: QuickAddRequest }) {
   const [mode, setMode] = useState<QuickAddMode>(props.initial.mode)
   const [text, setText] = useState(props.initial.prefill)
   const [busy, setBusy] = useState(false)
+  const [createError, setCreateError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement | null>(null)
 
   // Autofocus per open (the key above remounts us); a prefill selects so the
@@ -296,6 +316,8 @@ function QuickAddCard(props: { initial: QuickAddRequest }) {
 
   async function submit(): Promise<void> {
     if (text.trim() === '' || busy) return
+    // New attempt: the previous failure line goes away (also via onInput).
+    setCreateError(null)
     if (fields !== null) return submitFields(fields, text.trim())
     const line = text
     const p = parseQuickAddLine(line)
@@ -304,6 +326,7 @@ function QuickAddCard(props: { initial: QuickAddRequest }) {
     const target = calsFor(k)[0]
     if (target === undefined) {
       push('error', `No visible calendar for new ${k === 'todo' ? 'tasks' : 'events'}`)
+      setCreateError(CREATE_ERROR_TEXT)
       return
     }
     setBusy(true)
@@ -351,6 +374,7 @@ function QuickAddCard(props: { initial: QuickAddRequest }) {
     } catch {
       // Store rolled back + toasted (CONTRACTS §4); keep the dialog open.
       setBusy(false)
+      setCreateError(CREATE_ERROR_TEXT)
     }
   }
 
@@ -360,6 +384,7 @@ function QuickAddCard(props: { initial: QuickAddRequest }) {
     const target = calsFor(f.kind)[0]
     if (target === undefined) {
       push('error', `No visible calendar for new ${f.kind === 'todo' ? 'tasks' : 'events'}`)
+      setCreateError(CREATE_ERROR_TEXT)
       return
     }
     setBusy(true)
@@ -423,6 +448,7 @@ function QuickAddCard(props: { initial: QuickAddRequest }) {
     } catch {
       // Store rolled back + toasted (CONTRACTS §4); keep the dialog open.
       setBusy(false)
+      setCreateError(CREATE_ERROR_TEXT)
     }
   }
 
@@ -456,7 +482,10 @@ function QuickAddCard(props: { initial: QuickAddRequest }) {
           spellcheck={false}
           placeholder="Team sync fri 2pm · Milk tomorrow #A +home · todo: call mom"
           aria-label="Quick add event or task"
-          onInput={(e) => setText(e.currentTarget.value)}
+          onInput={(e) => {
+            setText(e.currentTarget.value)
+            setCreateError(null)
+          }}
           onKeyDown={onInputKeyDown}
         />
         <div class="flex items-center justify-between gap-2">
@@ -478,6 +507,11 @@ function QuickAddCard(props: { initial: QuickAddRequest }) {
         {preview !== '' && (
           <div class="text-xs text-muted" role="status" aria-live="polite">
             {preview}
+          </div>
+        )}
+        {createError !== null && (
+          <div class="text-xs text-danger" role="alert">
+            {createError}
           </div>
         )}
       </div>

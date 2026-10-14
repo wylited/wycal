@@ -20,7 +20,7 @@ import { addDays, addMinutes, dayKey, fmtDate, fmtTime } from '../../lib/util/da
 import { icsDateToDate, localDateStr, localMidnight, shiftIcsDate, toIcsDateInput, type IcsDate } from '../../lib/ics/types'
 import { accounts, addAccount } from '../../stores/accounts'
 import type { EditScope, EventRecord } from '../../stores/events'
-import { baseEvents, overrides } from '../../stores/events'
+import { baseEvents, baseKey, overrides } from '../../stores/events'
 import { collections } from '../../stores/calendars'
 import { initSync, syncState } from '../../lib/sync/engine'
 import { prefs, setPrefs } from '../../stores/prefs'
@@ -30,6 +30,7 @@ import { openEditor } from '../event-editor/editorState'
 import {
   bumpDialogClose,
   bumpDialogOpen,
+  peekClosePing,
   requestNewEvent,
   scopePending as scopePendingSignal,
 } from '../../stores/ui'
@@ -44,7 +45,8 @@ import { ScopeModal } from './ScopeModal'
 import { useCalendarEvents } from './useCalendarEvents'
 import { useCalendarMove } from './useCalendarMove'
 import { useShortcuts } from './useShortcuts'
-import { AgendaList } from './AgendaList'
+import { AgendaList, anchorKey, detailAnchors } from './AgendaList'
+import { detailRequest } from './detailRequest'
 import { type AgendaGroup } from '../../lib/agenda/agendaModel'
 
 import '../../styles/view-transitions.css'
@@ -168,7 +170,8 @@ const AGENDA_GROUP_OPTIONS: SegmentedOption<AgendaGroup>[] = [
 /**
  * Event pill chrome (design.md §1): tag each event element with `.wycal-ev` and
  * its calendar color as `--ev-c`; the soft fill + 3px left bar come from
- * theme.css. Module-level = stable reference (FC handler props never churn).
+ * theme.css. Also claims the record's detail-popover anchor slot (palette
+ * bridge). Module-level = stable reference (FC handler props never churn).
  */
 function onEventMount(info: EventMountArg): void {
   info.el.classList.add('wycal-ev')
@@ -177,6 +180,22 @@ function onEventMount(info: EventMountArg): void {
   info.el.dataset.wycalKey = info.event.id
   const color: string | undefined = info.event.extendedProps.color
   if (color) info.el.style.setProperty('--ev-c', color)
+  const src = (info.event.extendedProps.record ?? info.event.extendedProps.todo) as
+    | EventRecord
+    | TodoRecord
+    | undefined
+  if (src) detailAnchors.set(anchorKey(src.calendarUrl, src.data.uid), info.el)
+}
+
+/** Pair of onEventMount: release the anchor slot unless a newer mount took it. */
+function onEventUnmount(info: EventMountArg): void {
+  const src = (info.event.extendedProps.record ?? info.event.extendedProps.todo) as
+    | EventRecord
+    | TodoRecord
+    | undefined
+  if (!src) return
+  const key = anchorKey(src.calendarUrl, src.data.uid)
+  if (detailAnchors.get(key) === info.el) detailAnchors.delete(key)
 }
 
 /**
@@ -335,6 +354,75 @@ export function CalendarView() {
     if (!sel) return
     closeDetail()
     requestDeleteEvent(sel.record)
+  }, [closeDetail])
+
+  // --- Palette → detail bridge (detailRequest.ts, wave 16) --------------------
+  // The palette navigates (gotoCalendarQuery) and raises requestDetail; this
+  // effect resolves the record from the stores — series masters preferred,
+  // exactly the record shape the popovers take — and opens the existing
+  // detail state. The anchor element may not exist yet (the navigation's
+  // feed refetch is async): poll the anchor registry every 100ms for up to
+  // 2s, preferring a visible element (the agenda's hidden FC grid also
+  // registers), then fall back to the view container (the popover clamps to
+  // the viewport — an imperfect position is acceptable, opening is the point).
+  useEffect(() => {
+    detailRequest.value = null // drop any stale request from a previous mount
+    let alive = true
+    let token = 0
+    const unsub = detailRequest.subscribe((req) => {
+      if (!req) return
+      detailRequest.value = null // consumed: this effect owns the request
+      const my = ++token // a newer request supersedes an in-flight poll
+      void (async () => {
+        const key = anchorKey(req.calendarUrl, req.uid)
+        const deadline = Date.now() + 2000
+        let record: EventRecord | undefined
+        let todo: TodoRecord | undefined
+        let el: HTMLElement | undefined
+        for (;;) {
+          if (!alive || my !== token) return
+          el = detailAnchors.get(key)
+          const visible = el !== undefined && el.offsetParent !== null
+          if (req.kind === 'event') {
+            record =
+              baseEvents.value.get(baseKey(req.uid, req.calendarUrl)) ??
+              [...overrides.value.values()].find(
+                (o) => o.calendarUrl === req.calendarUrl && o.data.uid === req.uid,
+              )
+          } else {
+            todo = todos.value.get(todoKey(req.uid, req.calendarUrl))
+          }
+          if ((record !== undefined || todo !== undefined) && visible) break
+          if (Date.now() >= deadline) break
+          const { promise, resolve } = Promise.withResolvers<void>()
+          setTimeout(resolve, 100)
+          await promise
+        }
+        if (!alive || my !== token) return
+        if (record === undefined && todo === undefined) return // sync never delivered it
+        const view = document.querySelector<HTMLElement>('.fc-view')
+        const fallback = view && view.offsetParent !== null ? view : document.body
+        if (record !== undefined) openDetail(record, el ?? fallback)
+        else if (todo !== undefined) openTodoDetail(todo, el ?? fallback)
+      })()
+    })
+    return () => {
+      alive = false
+      token++
+      unsub()
+    }
+  }, [openDetail, openTodoDetail])
+
+  // ⌘K pings before the palette opens (stores/ui peekClosePing): drop any
+  // detail popover so it never sits under the palette.
+  useEffect(() => {
+    let prev = peekClosePing.value
+    return peekClosePing.subscribe((v) => {
+      if (v !== prev) {
+        prev = v
+        closeDetail()
+      }
+    })
   }, [closeDetail])
 
   // --- §22 view motion --------------------------------------------------------
@@ -870,6 +958,7 @@ export function CalendarView() {
           events={events}
           eventContent={renderEventContent}
           eventDidMount={onEventMount}
+          eventWillUnmount={onEventUnmount}
           datesSet={onDatesSet}
           select={onSelect}
           dateClick={onDateClick}

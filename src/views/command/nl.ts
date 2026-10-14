@@ -10,9 +10,15 @@
  *               'every monday' · 'every mon and weds' · 'weekdays' ·
  *               'daily'/'weekly'/'fortnightly'/'monthly'/'yearly' · plural
  *               weekdays ('gym mondays') → an RRULE fragment
- *               (FREQ=…;INTERVAL=…;BYDAY=…)
+ *               (FREQ=…;INTERVAL=…;BYDAY=…); with a BYDAY rule and no
+ *               explicitly typed date, the start rolls forward to the first
+ *               matching weekday (today counts) so the preview start equals
+ *               the series' first saved occurrence
  * - all-day     'all day' / 'all-day' anywhere → allDay (words blanked out
  *               of the title; the date itself still comes from the base pass)
+ * - due         a standalone 'due' directly before a date token ('report due
+ *               friday') joins the date's chip and leaves the title — times
+ *               and durations after 'due' don't count
  * - location    'at <place>' / '@<place>' — tried only where a TIME does not
  *               fit ('at 3pm' is a time, never a place; kashcal's TimeRule
  *               ordering — day parts like 'at dawn' count as times too),
@@ -20,7 +26,8 @@
  *               can't steal the location
  * - contacts    a leading 'contact <name>', or an email / phone token (with
  *               an optional leading verb — 'call john john@x.com') → a
- *               contact candidate {fn, email?, tel?}
+ *               contact candidate {fn, email?, tel?}; a trailing standalone
+ *               tel-shaped token wins so the fn stays clean
  *
  * Overlay rules run on a length-preserving blanked copy of the input, so the
  * base pass's chip offsets stay valid against the ORIGINAL line — the
@@ -221,7 +228,7 @@ const MONTH_SPELLINGS: Record<string, true> = {
 const PLACE_STOP: Record<string, true> = {
   at: true, on: true, in: true, for: true, from: true, with: true, and: true,
   next: true, today: true, tod: true, tomorrow: true, tom: true, tmr: true,
-  tonight: true,
+  tonight: true, yesterday: true, due: true,
 }
 
 /** Day-part words: 'at <x>' with one of these is a (potential) time pair,
@@ -295,6 +302,41 @@ function scanAllDay(input: string): { start: number; end: number } | undefined {
 }
 
 // ---------------------------------------------------------------------------
+// 'due' keyword ('report due friday' → 'due' leaves the title once a date
+// token directly follows it; the date itself still comes from the base pass)
+// ---------------------------------------------------------------------------
+
+/**
+ * Does the word at ws[i] head a base-pass date token? Relative words,
+ * (next) weekdays, month names, '10/24', '31st'/'3rd', '24 oct' (digit plus
+ * month word) and 'in 3 days' ('in' plus digit) all count. Times and
+ * durations ('due 5pm', 'due 30m') are NOT date heads — 'due' stays in the
+ * title there.
+ */
+function dateHeaded(ws: Word[], i: number): boolean {
+  const t = bareWord(ws[i])
+  if (t === '') return false
+  if (/^(?:today|tod|tomorrow|tom|tmr|yesterday|next)$/.test(t)) return true
+  if (WEEKDAY_NO[t] !== undefined || MONTH_SPELLINGS[t] === true) return true
+  if (/^\d/.test(t)) {
+    if (/^\d{1,2}\/\d{1,2}$/.test(t) || /^\d{1,2}(?:st|nd|rd|th)$/.test(t)) return true
+    return /^\d{1,2}$/.test(t) && MONTH_SPELLINGS[bareWord(ws[i + 1])] === true
+  }
+  if (t === 'in') return /^\d/.test(bareWord(ws[i + 1]))
+  return false
+}
+
+/** A standalone 'due' directly before a date token: consumed as a date chip
+ *  so 'todo: Report due Friday' titles as 'Report' with Friday as the due. */
+function scanDueKeyword(input: string): { start: number; end: number } | undefined {
+  const ws = words(input)
+  for (let i = 0; i < ws.length; i++) {
+    if (bareWord(ws[i]) === 'due' && dateHeaded(ws, i + 1)) return { start: ws[i].start, end: ws[i].end }
+  }
+  return undefined
+}
+
+// ---------------------------------------------------------------------------
 // Contacts ('contact …' lead, or an email/phone token)
 // ---------------------------------------------------------------------------
 
@@ -302,6 +344,11 @@ const EMAIL_RE = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+/
 
 /** Digit-run candidate for a phone number; validated by telOk. */
 const PHONE_RE = /\+?\d[\d\s().-]{5,}\d/
+
+/** A trailing STANDALONE tel token: 7+ chars of digits/parens/dashes with an
+ *  optional leading '+' and no letters. Still telOk-checked, so a date-shaped
+ *  trailing run ('2026-10-14') is never taken as a phone. */
+const TEL_TOKEN_RE = /^\+?[\d().-]{7,}$/
 
 const CONTACT_LEAD_RE = /^\s*(?:add\s+)?contact(?:\s+for)?[:\s]+/i
 
@@ -313,12 +360,14 @@ const CONTACT_VERBS: Record<string, true> = {
 
 /**
  * Phone sanity: 7–15 digits, and NOT a date-shaped run ('2026-10-14',
- * '14.10.2026' — the year-bearing forms are dates, never phone numbers).
+ * '14.10.2026' — the year-bearing forms are dates, never phone numbers). The
+ * D.M.Y shape needs BOTH separators, so '555-0100' (whose '-0100' tail
+ * superficially reads as '-0100') stays a phone.
  */
 function telOk(s: string): boolean {
   const digits = (s.match(/\d/g) ?? []).length
   if (digits < 7 || digits > 15) return false
-  return !/\d{4}[-/.]\d{1,2}(?:[-/.]\d{1,2})?/.test(s) && !/\d{1,2}[-/.]\d{4}/.test(s)
+  return !/\d{4}[-/.]\d{1,2}(?:[-/.]\d{1,2})?/.test(s) && !/\d{1,2}[-/.]\d{1,2}[-/.]\d{4}/.test(s)
 }
 
 function detectContact(
@@ -333,9 +382,28 @@ function detectContact(
   // the original line (blanking preserves length).
   const email = EMAIL_RE.exec(padded)
   if (email !== null) padded = blank(padded, email.index, email.index + email[0].length)
-  const telMatch = PHONE_RE.exec(padded)
-  const tel = telMatch !== null && telOk(telMatch[0]) ? telMatch[0] : undefined
-  if (tel !== undefined) padded = blank(padded, telMatch!.index, telMatch!.index + telMatch![0].length)
+  // Tel: a trailing standalone token wins ('maya@x.com 555-0100') — it must
+  // be whitespace-separated from the name, so digit-bearing words beside it
+  // ('Room 12 555-0100') stay in the name and the fn comes back clean. The
+  // blanket scan stays as the fallback for a phone sitting mid-line.
+  const tail = (() => {
+    const ws = words(padded)
+    return ws.length > 0 ? ws[ws.length - 1] : undefined
+  })()
+  let tel: string | undefined
+  let telIndex = -1
+  if (tail !== undefined && TEL_TOKEN_RE.test(tail.text) && telOk(tail.text)) {
+    tel = tail.text
+    telIndex = tail.start
+  }
+  if (tel === undefined) {
+    const telMatch = PHONE_RE.exec(padded)
+    if (telMatch !== null && telOk(telMatch[0])) {
+      tel = telMatch[0]
+      telIndex = telMatch.index
+    }
+  }
+  if (tel !== undefined) padded = blank(padded, telIndex, telIndex + tel.length)
 
   const leadMatched = lead !== null
   if (!leadMatched && email === null && tel === undefined) return undefined
@@ -362,7 +430,7 @@ function detectContact(
     chips.push({ start: email.index, end: email.index + email[0].length, text: email[0], kind: 'contact-info' })
   }
   if (tel !== undefined) {
-    chips.push({ start: telMatch!.index, end: telMatch!.index + tel.length, text: tel, kind: 'contact-info' })
+    chips.push({ start: telIndex, end: telIndex + tel.length, text: tel, kind: 'contact-info' })
   }
   return {
     candidate: {
@@ -417,6 +485,15 @@ export function interpret(input: string): Interpretation {
     // Record over the union, and 'all day' is date-shaped preview material.
     chips.push({ start: ad.start, end: ad.end, text: input.slice(ad.start, ad.end), kind: 'date' })
   }
+  // Same pre-location ordering for the 'due' keyword: 'pay at bank due
+  // friday' must not read 'due' into the place name. The keyword only
+  // consumes itself when a date token directly follows; the date still comes
+  // from the base pass.
+  const dueWord = scanDueKeyword(input)
+  if (dueWord !== undefined) {
+    padded = blank(padded, dueWord.start, dueWord.end)
+    chips.push({ start: dueWord.start, end: dueWord.end, text: input.slice(dueWord.start, dueWord.end), kind: 'date' })
+  }
   const loc = scanLocation(padded)
   if (loc !== undefined) {
     padded = blank(padded, loc.start, loc.end)
@@ -424,6 +501,34 @@ export function interpret(input: string): Interpretation {
   }
 
   const base = parseQuickAddLine(padded)
+  // Recurrence first occurrence: with a BYDAY rule and no explicitly typed
+  // date, the base pass anchors the wall time to today — 'gym every monday
+  // 7am' typed on a Wednesday previews Oct 14 while the saved series (RRULE
+  // expansion from the DTSTART) starts Mon Oct 19. Roll the start forward to
+  // the first BYDAY weekday (today counts, matching inclusive expansion) so
+  // the palette preview, chips and the saved DTSTART agree. Non-BYDAY rules
+  // (daily/monthly/yearly) and explicit date tokens keep the base date.
+  if (rec !== undefined && base.dueOrStart !== undefined && !base.allDay) {
+    const byday = /BYDAY=([A-Z,]+)/.exec(rec.rrule)
+    const explicitDate = base.chips.some((c) => c.kind === 'date')
+    if (byday !== null && !explicitDate) {
+      const allowed = new Set(byday[1].split(','))
+      const d = base.dueOrStart.date
+      let add = 0
+      while (
+        add < 7 &&
+        !allowed.has(BYDAY[new Date(d.getFullYear(), d.getMonth(), d.getDate() + add).getDay()])
+      ) {
+        add += 1
+      }
+      if (add > 0 && add < 7) {
+        base.dueOrStart = {
+          ...base.dueOrStart,
+          date: new Date(d.getFullYear(), d.getMonth(), d.getDate() + add, d.getHours(), d.getMinutes(), 0, 0),
+        }
+      }
+    }
+  }
   for (const c of base.chips) chips.push(c)
   chips.sort((a, b) => a.start - b.start || a.end - b.end)
 

@@ -19,7 +19,7 @@ import { serializeIcsEvent } from '../../lib/ics/serialize'
 import { icsDateToDate } from '../../lib/ics/types'
 import { eventColorFor } from '../../lib/util/colors'
 import { openEditor } from '../event-editor/editorState'
-import { bumpDialogClose, bumpDialogOpen } from '../../stores/ui'
+import { bumpPopoverClose, bumpPopoverOpen } from '../../stores/ui'
 import { Icon } from '../../ui/icons'
 
 const WIDTH = 340
@@ -111,9 +111,9 @@ export function EventDetailPopover(props: {
 
   // Global dialog gate while open (CONTRACTS §16): shortcuts are suppressed.
   useEffect(() => {
-    bumpDialogOpen()
-    return bumpDialogClose
-  }, [])
+    bumpPopoverOpen()
+    return bumpPopoverClose
+  }, []);
 
   const cal = collections.value.find((c) => c.url === record.calendarUrl)
   const color = eventColorFor(record)

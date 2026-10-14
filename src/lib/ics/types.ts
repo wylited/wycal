@@ -130,10 +130,31 @@ export function sameOccurrenceKey(a: string, b: string): boolean {
 }
 
 /**
+ * Timed IcsDate carrying the local *wall* time (encoded as-if-UTC with
+ * `floating: true`), so read-back (icsDateToDate) restores the same wall
+ * time regardless of zone.
+ *
+ * LAW (CONTRACTS §34/§35): a floating IcsDate is always WALL-ENCODED —
+ * Date.UTC of the local wall fields — never a true instant. This is the
+ * single wall-encoding path; toIcsDateInput's floating branch routes
+ * through it, so edits and drag-drops of floating originals cannot store
+ * a true instant (which would read back shifted by the zone offset — the
+ * −8h bug family).
+ */
+export function floatingWallIso(d: Date): IcsDate {
+  const wall = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes()))
+  return { utc: wall.toISOString(), floating: true }
+}
+
+/**
  * Build an IcsDate from a UI Date (a true instant). `utcForm` keeps timed
  * inputs without a TZID in the UTC form (Z suffix) instead of floating —
  * EventEditor passes it so editing a UTC event does not silently convert it
  * to floating (which shifts the event by the zone offset on re-read).
+ *
+ * The floating branch (timed, no TZID, not utcForm) wall-encodes via
+ * floatingWallIso per the floating = wall-encoded law — never a true
+ * instant, or read-back shifts the event by the zone offset.
  */
 export function toIcsDateInput(date: Date, allDay: boolean, tzid?: string, utcForm?: boolean): IcsDate {
   if (allDay) {
@@ -142,19 +163,7 @@ export function toIcsDateInput(date: Date, allDay: boolean, tzid?: string, utcFo
   }
   if (tzid) return { utc: date.toISOString(), tzid }
   if (utcForm) return { utc: date.toISOString() }
-  return { utc: date.toISOString(), floating: true }
-}
-
-/**
- * Timed IcsDate carrying the local *wall* time (encoded as-if-UTC with
- * `floating: true`), so read-back (icsDateToDate) restores the same wall
- * time regardless of zone. `toIcsDateInput(d, false)` must not be used for
- * new saves here — it stores the true instant, which shifts by the zone
- * offset when the floating form is read back as wall time.
- */
-export function floatingWallIso(d: Date): IcsDate {
-  const wall = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes()))
-  return { utc: wall.toISOString(), floating: true }
+  return floatingWallIso(date)
 }
 
 /**

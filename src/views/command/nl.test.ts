@@ -1,7 +1,8 @@
 // nl.ts interpret() overlay tests (bun:test) — CONTRACTS §16 Q quick-add
-// grammar. Dates come from the live clock (parseQuickAddLine uses `now`), so
-// assertions pin pinned-clock runs via setSystemTime and only check nl-owned
-// fields (kind/title/location/rrule/allDay/chips), never exact Date values.
+// grammar. The clock is pinned once below via setSystemTime (the base pass
+// resolves 'tomorrow'/'friday' against `now`), so both nl-owned-field
+// assertions (kind/title/location/rrule/allDay/chips) and exact pinned-date
+// assertions (recurrence roll) are deterministic.
 
 import { describe, expect, it, setSystemTime } from 'bun:test'
 import { interpret } from './nl'
@@ -174,5 +175,108 @@ describe('interpret — contacts vs events', () => {
     expect(r.kind).toBe('contact')
     expect(r.contact?.fn).toBe('bob')
     expect(r.contact?.email).toBe('bob@x.com')
+  })
+})
+
+describe('interpret — due keyword', () => {
+  it("todo: Report due Friday → title 'Report', Friday due, both tokens chipped", () => {
+    const r = interpret('todo: Report due Friday')
+    expect(r.kind).toBe('todo')
+    expect(r.title).toBe('Report')
+    expect(r.due?.getDay()).toBe(5)
+    expect(r.allDay).toBe(true)
+    expect(r.when).toBeUndefined()
+    const dueChip = r.chips.find((c) => c.text === 'due')
+    expect(dueChip?.kind).toBe('date')
+    expect(dueChip?.start).toBe(13)
+    expect(dueChip?.end).toBe(16)
+    expect(r.chips.some((c) => c.text === 'Friday' && c.kind === 'date')).toBe(true)
+  })
+
+  it("lowercase 'report due friday' strips the keyword too", () => {
+    const r = interpret('report due friday')
+    expect(r.title).toBe('report')
+    expect(r.due?.getDay()).toBe(5)
+  })
+
+  it("'due in 3 days' consumes the keyword", () => {
+    const r = interpret('taxes due in 3 days')
+    expect(r.title).toBe('taxes')
+    expect(r.due).not.toBeUndefined()
+  })
+
+  it("'due' before a non-date stays title text", () => {
+    const r = interpret('fix the due process')
+    expect(r.title).toBe('fix the due process')
+    expect(r.due).toBeUndefined()
+  })
+})
+
+describe('interpret — weekday case and all-day order', () => {
+  it('Offsite Friday all day → event, all-day Friday, title Offsite', () => {
+    const r = interpret('Offsite Friday all day')
+    expect(r.kind).toBe('event')
+    expect(r.allDay).toBe(true)
+    expect(r.title).toBe('Offsite')
+    expect(r.due?.getDay()).toBe(5)
+    expect(r.when).toBeUndefined()
+    expect(r.chips.some((c) => c.text === 'Friday')).toBe(true)
+    expect(r.chips.some((c) => c.text === 'all day')).toBe(true)
+  })
+
+  it('a capitalized weekday parses without all day too', () => {
+    const r = interpret('Report Friday')
+    expect(r.title).toBe('Report')
+    expect(r.due?.getDay()).toBe(5)
+  })
+})
+
+describe('interpret — recurrence first occurrence', () => {
+  it('Gym every Monday 7am typed Wed Oct 14 → start rolls to Mon Oct 19 07:00', () => {
+    const r = interpret('Gym every Monday 7am')
+    expect(r.kind).toBe('event')
+    expect(r.rrule).toBe('FREQ=WEEKLY;BYDAY=MO')
+    const first = new Date(2026, 9, 19, 7, 0).getTime()
+    expect(r.when?.getTime()).toBe(first)
+    expect(r.due?.getTime()).toBe(first)
+  })
+
+  it('today matching the BYDAY keeps today', () => {
+    const r = interpret('gym every Wednesday 7am')
+    expect(r.when?.getTime()).toBe(new Date(2026, 9, 14, 7, 0).getTime())
+  })
+
+  it('an explicitly typed date wins over the roll', () => {
+    const r = interpret('launch oct 20 every friday 7pm')
+    expect(r.rrule).toBe('FREQ=WEEKLY;BYDAY=FR')
+    expect(r.when?.getTime()).toBe(new Date(2026, 9, 20, 19, 0).getTime())
+  })
+
+  it('non-BYDAY rules keep the base anchor', () => {
+    const r = interpret('standup daily 9am')
+    expect(r.rrule).toBe('FREQ=DAILY')
+    expect(r.when?.getTime()).toBe(new Date(2026, 9, 14, 9, 0).getTime())
+  })
+})
+
+describe('interpret — contact tel extraction', () => {
+  it('a trailing tel token fills tel and leaves a clean fn', () => {
+    const r = interpret('Maya maya@example.com 555-0100')
+    expect(r.kind).toBe('contact')
+    expect(r.contact?.fn).toBe('Maya')
+    expect(r.contact?.email).toBe('maya@example.com')
+    expect(r.contact?.tel).toBe('555-0100')
+    expect(r.title).toBe('Maya')
+  })
+
+  it('digit-bearing words beside the tel stay in the name', () => {
+    const r = interpret('Room 12 555-0100')
+    expect(r.contact?.fn).toBe('Room 12')
+    expect(r.contact?.tel).toBe('555-0100')
+  })
+
+  it('a date-shaped trailing run is never a phone', () => {
+    const r = interpret('Party 2026-10-14')
+    expect(r.contact).toBeUndefined()
   })
 })

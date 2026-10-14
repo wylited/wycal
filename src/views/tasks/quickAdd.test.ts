@@ -1,6 +1,7 @@
 // Natural-language quick-add parser tests (CONTRACTS §15/§16 Q): decimal
-// durations, time ranges, noon/midnight, bare 'at N' hours, bare ordinal
-// dates, 'next week', 'all day', colon-less todo/task prefixes and '#tag'
+// durations, long durations (up to 99h), time ranges, noon/midnight, bare
+// 'at N' hours, bare ordinal dates, 'next week', 'all day', 'yesterday',
+// capitalized weekdays, colon-less todo/task prefixes and '#tag'
 // tokens — plus the pre-existing token behaviors they must not disturb. All
 // assertions are system-date independent: expected dates are built through
 // the same local-midnight conventions the implementation uses (day offsets
@@ -366,5 +367,63 @@ describe('chips report caller-input spans', () => {
   it('describeDue renders the parsed hint', () => {
     expect(describeDue({ date: day(0), allDay: true })).toMatch(/^[A-Z][a-z]{2} [A-Z][a-z]{2} \d{1,2}$/)
     expect(describeDue({ date: at(today(), 17), allDay: false })).toMatch(/ · 5:00pm$/)
+  })
+})
+
+describe('long durations (line pass only)', () => {
+  it('for 25h → 1500 minutes, stripped from the title', () => {
+    const r = line('Marathon tomorrow 8am for 25h')
+    expect(r.kind).toBe('event')
+    expect(r.summary).toBe('Marathon')
+    expect(r.dueOrStart?.date.getTime()).toBe(at(day(1), 8).getTime())
+    expect(r.durationMinutes).toBe(1500)
+  })
+  it("'for 25 hours' spelled out parses too", () => {
+    const r = line('offsite for 25 hours')
+    expect(r.summary).toBe('offsite')
+    expect(r.durationMinutes).toBe(1500)
+  })
+  it('bare 25h parses', () => {
+    expect(line('sync 25h').durationMinutes).toBe(1500)
+  })
+  it('hours run to 99; 100h and up stay text', () => {
+    expect(line('x 99h').durationMinutes).toBe(5940)
+    const over = line('x 100h')
+    expect(over.summary).toBe('x 100h')
+    expect(over.durationMinutes).toBeUndefined()
+  })
+  it('minutes, decimals and the todo pass are unchanged', () => {
+    expect(line('x 90 min').durationMinutes).toBe(90)
+    expect(line('x 1.5h').durationMinutes).toBe(90)
+    expect(parseQuickAdd('x 25h').summary).toBe('x 25h')
+  })
+})
+
+describe('yesterday', () => {
+  it('yesterday → yesterday all-day, stripped', () => {
+    const r = parseQuickAdd('Submit yesterday')
+    expect(r.summary).toBe('Submit')
+    expect(r.due?.date.getTime()).toBe(day(-1).getTime())
+    expect(r.due?.allDay).toBe(true)
+  })
+  it('yesterday + time → timed event on yesterday', () => {
+    const r = line('Blastpast yesterday 3pm')
+    expect(r.kind).toBe('event')
+    expect(r.summary).toBe('Blastpast')
+    expect(r.dueOrStart?.date.getTime()).toBe(at(day(-1), 15).getTime())
+  })
+})
+
+describe('capitalized weekdays', () => {
+  it('Report Friday → the upcoming Friday, stripped', () => {
+    const r = line('Report Friday')
+    expect(r.summary).toBe('Report')
+    expect(r.dueOrStart?.date.getTime()).toBe(upcoming(5).getTime())
+    expect(r.dueOrStart?.allDay).toBe(true)
+  })
+  it("'Next Monday' capitalizes too", () => {
+    const r = line('plan Next Monday')
+    expect(r.summary).toBe('plan')
+    expect(r.dueOrStart?.date.getTime()).toBe(nextMonday().getTime())
   })
 })

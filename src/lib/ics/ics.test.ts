@@ -9,7 +9,7 @@ import { serializeIcsEvent, serializeIcsTodo } from './serialize'
 import { rruleFromEvent } from './recurrence'
 import { expandEvents } from './expand'
 import { tzTimeToUtc, utcToTzTime } from './tz'
-import { defaultUid, icsDateToDate, localMidnightIso, prioLetter, sameOccurrenceKey, toIcsDateInput } from './types'
+import { defaultUid, floatingWallIso, icsDateToDate, localMidnightIso, prioLetter, sameOccurrenceKey, toIcsDateInput } from './types'
 import type { IcsEvent, IcsTodo } from './types'
 
 const mk = (patch: Partial<IcsEvent>): IcsEvent => ({
@@ -672,11 +672,36 @@ describe('types helpers', () => {
     const d = new Date('2026-03-02T10:00:00.000Z')
     expect(toIcsDateInput(d, false, 'Asia/Tokyo')).toEqual({ utc: d.toISOString(), tzid: 'Asia/Tokyo' })
     expect(icsDateToDate({ utc: d.toISOString(), tzid: 'Asia/Tokyo' })).toEqual(d)
+    // Floating: wall-encode on write, wall-read on read-back — round-trips to
+    // the same instant in ANY system timezone (floating = wall-encoded law).
     const flo = toIcsDateInput(d, false)
     expect(flo.floating).toBe(true)
+    expect(flo.utc).toBe(floatingWallIso(d).utc)
     expect(icsDateToDate(flo)).toEqual(d)
     const allDay = toIcsDateInput(d, true)
-    expect(allDay.date).toBe(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`)
+    const ds = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    expect(allDay.date).toBe(ds)
+    expect(allDay.utc).toBe(localMidnightIso(ds))
+  })
+
+  it('toIcsDateInput wall-encodes the floating branch (never a true instant)', () => {
+    // Built from local fields, so the wall form is identical in ANY system
+    // timezone: a 10:00 local timed save must store wall 10:00, not the
+    // true-instant wall (the −8h bug: EventEditor edits + drag-drop saves).
+    const local = new Date(2026, 9, 12, 10, 0, 0)
+    const flo = toIcsDateInput(local, false)
+    expect(flo.utc.startsWith('2026-10-12T10:00:00')).toBe(true)
+    expect(flo).toEqual({ utc: '2026-10-12T10:00:00.000Z', floating: true })
+    // Simulated offset shift: whatever zone offset sits between write and
+    // read-back (e.g. −5h), the wall clock is restored exactly.
+    const back = icsDateToDate(flo)
+    expect(back.getHours()).toBe(10)
+    expect(back.getDate()).toBe(12)
+    expect(back).toEqual(local)
+    // UTC originals stay true instants; all-day keeps `date` authoritative.
+    const d = new Date('2026-10-12T14:00:00.000Z')
+    expect(toIcsDateInput(d, false, undefined, true)).toEqual({ utc: '2026-10-12T14:00:00.000Z' })
+    expect(toIcsDateInput(d, true)).toEqual({ utc: localMidnightIso('2026-10-12'), date: '2026-10-12' })
   })
 
   it('sameOccurrenceKey: DATE-TIME recId collides with the all-day base key', () => {
@@ -692,8 +717,9 @@ describe('types helpers', () => {
     const d = new Date('2026-10-12T14:00:00.000Z')
     expect(toIcsDateInput(d, false, undefined, true)).toEqual({ utc: '2026-10-12T14:00:00.000Z' })
     expect(toIcsDateInput(d, false, undefined, true).floating).toBeUndefined()
-    // Existing callers (quick-add, drag-move) keep the floating default.
-    expect(toIcsDateInput(d, false, undefined)).toEqual({ utc: '2026-10-12T14:00:00.000Z', floating: true })
+    // Existing callers (quick-add, drag-move) keep the floating default —
+    // wall-encoded per the floating law, not the true instant.
+    expect(toIcsDateInput(d, false, undefined)).toEqual(floatingWallIso(d))
     // An edited UTC event serializes back with the Z suffix, not floating.
     const ev = mk({
       start: toIcsDateInput(d, false, undefined, true),

@@ -25,7 +25,7 @@ import { icsDateToDate, prioLetter, shiftIcsDate, toIcsDateInput } from '../../l
 import type { IcsDate, IcsTodo } from '../../lib/ics/types'
 import { eventColorFor } from '../../lib/util/colors'
 import { openTodoEditor } from '../tasks/todoEditor'
-import { bumpDialogClose, bumpDialogOpen } from '../../stores/ui'
+import { bumpPopoverClose, bumpPopoverOpen } from '../../stores/ui'
 import { Icon } from '../../ui/icons'
 
 const WIDTH = 340
@@ -125,9 +125,9 @@ export function TodoDetailPopover(props: {
 
   // Global dialog gate while open (CONTRACTS §16): shortcuts are suppressed.
   useEffect(() => {
-    bumpDialogOpen()
-    return bumpDialogClose
-  }, [])
+    bumpPopoverOpen()
+    return bumpPopoverClose
+  }, []);
 
   const cal = collections.value.find((c) => c.url === rec.calendarUrl)
   const color = eventColorFor({ color: td.color, calendarUrl: rec.calendarUrl })

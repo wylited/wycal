@@ -42,6 +42,21 @@ import { prefs, setPrefs } from '../../stores/prefs'
 import { agendaFilters } from '../../stores/agendaFilters' // sidebar filter chips (N1): status/priority computed, tags signal
 import { Icon } from '../../ui/icons'
 
+// --- Palette → detail-popover anchor registry (detailRequest.ts contract) ---
+// `${calendarUrl}|${uid}` → the element representing that record. Both anchor
+// sources register here: FullCalendar grid pills (CalendarView eventDidMount/
+// eventWillUnmount) and agenda rows (AgendaRow mount effect). CalendarView's
+// detail-request effect polls it, because the palette's navigation triggers a
+// feed refetch — the element may not exist yet when the request lands.
+// Unmount sites delete only when still the registered element (a newer mount
+// supersedes): `if (detailAnchors.get(key) === el) detailAnchors.delete(key)`.
+export const detailAnchors = new Map<string, HTMLElement>()
+
+/** Registry key for a record identity — one format, three writers in lockstep. */
+export function anchorKey(calendarUrl: string, uid: string): string {
+  return `${calendarUrl}|${uid}`
+}
+
 export interface AgendaListProps {
   /** Loaded window length in days, starting today (CalendarView infinite-scroll state). */
   windowDays: number
@@ -63,16 +78,29 @@ export interface AgendaListProps {
  * One agenda row: [time] [dot|checkbox] title (CalendarName). Day mode keeps
  * the color dot + calendar suffix; `bare` (kanban column) renders time+title
  * only — the column IS the calendar (todos keep their checkbox either way).
+ * `whenLabel` overrides the time cell (undated todos render nothing there).
  */
 function AgendaRow(props: {
   item: AgendaItem
   hour12: boolean
   /** Kanban column mode: no dot, no (CalendarName) suffix. */
   bare?: boolean
+  whenLabel?: string
   onEventClick: (record: EventRecord, el: HTMLElement) => void
   onTodoClick: (todo: TodoRecord, el: HTMLElement) => void
 }) {
   const item = props.item
+  const rowRef = useRef<HTMLDivElement | null>(null)
+  // Palette→detail bridge: this row's element is the popover anchor for its
+  // record (same registry key the FC grid pills use); released on unmount.
+  useEffect(() => {
+    const key = anchorKey(item.record.calendarUrl, item.record.data.uid)
+    const el = rowRef.current
+    if (el) detailAnchors.set(key, el)
+    return () => {
+      if (el && detailAnchors.get(key) === el) detailAnchors.delete(key)
+    }
+  }, [item.record.key])
   const open = (el: HTMLElement): void => {
     if (item.kind === 'event') props.onEventClick(item.record, el)
     else props.onTodoClick(item.record, el)
@@ -80,6 +108,7 @@ function AgendaRow(props: {
   const done = item.kind === 'todo' && isTodoDone(item.record.data)
   return (
     <div
+      ref={rowRef}
       class="wycal-agenda-row"
       role="button"
       tabIndex={0}
@@ -90,7 +119,9 @@ function AgendaRow(props: {
         open(e.currentTarget)
       }}
     >
-      <span class="wycal-agenda-when tabular-nums">{item.allDay ? 'All day' : fmtTime(item.when, props.hour12)}</span>
+      <span class="wycal-agenda-when tabular-nums">
+        {props.whenLabel ?? (item.allDay ? 'All day' : fmtTime(item.when, props.hour12))}
+      </span>
       {item.kind === 'event' ? (
         props.bare ? null : (
           <span class="chip-dot shrink-0" style={{ backgroundColor: item.color }} aria-hidden="true" />
@@ -235,6 +266,18 @@ export function AgendaList(props: AgendaListProps) {
   if (props.showTodos) {
     for (const rec of todos.value.values()) if (isCalendarVisible(rec.calendarUrl, 'agenda')) todoRecs.push(rec)
   }
+  // Ghost todos: no DUE and no DTSTART → collectAgendaItems never places them
+  // (the FC feed only emits in-range todos either way), so they come straight
+  // from the store and surface as the trailing 'No due date' group below.
+  const undated: TodoRecord[] = []
+  if (props.showTodos) {
+    for (const rec of todoRecs) if (!rec.data.due && !rec.data.dtstart) undated.push(rec)
+    undated.sort((a, b) => {
+      const sa = a.data.summary
+      const sb = b.data.summary
+      return sa < sb ? -1 : sa > sb ? 1 : 0
+    })
+  }
   const calInfo = (url: string) => {
     const c = collections.value.find((c) => c.url === url)
     return c ? { name: c.name, color: collectionColor(c) } : undefined
@@ -261,8 +304,13 @@ export function AgendaList(props: AgendaListProps) {
     setPrefs({ calendarOrder: list })
   }
 
+  // The undated group is a day-grouping feature (kanban columns stay
+  // day-sectioned per calendar); it counts toward the empty state only where
+  // it actually renders.
+  const hasUndatedGroup = props.group !== 'calendar' && undated.length > 0
+
   let body: JSX.Element | JSX.Element[]
-  if (items.length === 0) {
+  if (items.length === 0 && !hasUndatedGroup) {
     body = (
       <div class="flex h-full flex-col items-center justify-center gap-2 text-muted">
         <Icon.calendar size={24} />
@@ -302,7 +350,7 @@ export function AgendaList(props: AgendaListProps) {
       </div>
     )
   } else {
-    body = groupByDay(items).map((sec) => (
+    const sections = groupByDay(items).map((sec) => (
       <section class="agenda-day" key={sec.key}>
         <header class="agenda-day-head">
           <h2>{agendaDayLabel(sec.key, todayKey)}</h2>
@@ -319,6 +367,38 @@ export function AgendaList(props: AgendaListProps) {
         ))}
       </section>
     ))
+    if (undated.length > 0) {
+      // Trailing 'No due date' group, same day-section + row markup as the
+      // dated sections; completed undated todos render struck-through muted
+      // exactly like dated ones (the agenda never filters completion).
+      sections.push(
+        <section class="agenda-day" key="undated">
+          <header class="agenda-day-head">
+            <h2>No due date</h2>
+            <span class="agenda-day-count tabular-nums">{undated.length}</span>
+          </header>
+          {undated.map((rec) => (
+            <AgendaRow
+              key={rec.key}
+              whenLabel=""
+              hour12={hour12}
+              item={{
+                kind: 'todo',
+                when: new Date(0), // placeholder — the row renders no time cell
+                day: '',
+                allDay: true,
+                record: rec,
+                calendarName: calInfo(rec.calendarUrl)?.name,
+                color: calInfo(rec.calendarUrl)?.color,
+              }}
+              onEventClick={props.onEventClick}
+              onTodoClick={props.onTodoClick}
+            />
+          ))}
+        </section>,
+      )
+    }
+    body = sections
   }
 
   // §agenda infinite scroll: the sentinel hangs after the last section; when

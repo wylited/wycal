@@ -26,14 +26,18 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import type { JSX } from 'preact'
 import { signal } from '@preact/signals'
+import { accounts } from '../../stores/accounts'
+import { collections, toggleCalendar } from '../../stores/calendars'
 import { contacts, requestOpenContact } from '../../stores/contacts'
 import { prefs, setPrefs } from '../../stores/prefs'
+import { applyView, savedViewsV2 } from '../../stores/savedviews'
 import { bumpDialogClose, bumpDialogOpen, requestNewEvent } from '../../stores/ui'
 import { icsDateToDate, prioLetter } from '../../lib/ics/types'
 import { dayKey, fmtDate, fmtTime } from '../../lib/util/date'
 import { gotoCalendarQuery, ROUTES } from '../../routes'
 import { Icon } from '../../ui/icons'
 import { pendingContactPrefill } from '../contacts/prefill'
+import { requestDetail } from '../calendar/detailRequest'
 import { openQuickAdd, openQuickAddFields } from '../quickadd/QuickAddDialog'
 import { filterMatchItems, matchUniverse, tokenizeQuery } from '../search/searchEngine'
 import type { EventItem, TodoItem } from '../search/searchEngine'
@@ -102,11 +106,16 @@ function createContact(prefill?: { fn: string; email?: string; tel?: string }): 
   window.setTimeout(fire, 0)
 }
 
-const THEMES = ['light', 'dark', 'auto'] as const
-
+/** Binary theme switch: resolve the EFFECTIVE theme the way the app renders
+ *  it (app.tsx stamps the raw value on <html data-theme>; 'auto' resolves to
+ *  dark inside theme.css via prefers-color-scheme) and jump to the OTHER of
+ *  light/dark. Never selects 'auto' — cycling auto→light→dark made the first
+ *  press from an auto-light system a visual no-op. */
 function toggleTheme(): void {
-  const next = THEMES[(THEMES.indexOf(prefs.value.theme) + 1) % THEMES.length]
-  setPrefs({ theme: next })
+  const raw = document.documentElement.dataset.theme
+  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+  const effective = raw === 'light' || raw === 'dark' ? raw : prefersDark ? 'dark' : 'light'
+  setPrefs({ theme: effective === 'dark' ? 'light' : 'dark' })
 }
 
 const BYDAY_FULL: Record<string, string> = {
@@ -221,6 +230,9 @@ interface ContactHit {
   fn: string
   detail: string
   org?: string
+  email?: string
+  tel?: string
+  note?: string
 }
 
 /** Text tokens of a query for the contacts pass (contacts ignore the keyword grammar). */
@@ -271,12 +283,24 @@ type Entry =
       id: string
       label: string
       hint: string
-      icon: 'plus' | 'calendar' | 'users' | 'sunMoon'
+      icon: 'plus' | 'calendar' | 'users' | 'sunMoon' | 'settings'
       run: () => void
     }
   | { type: 'event'; item: EventItem }
   | { type: 'todo'; item: TodoItem }
-  | { type: 'contact'; href: string; fn: string; detail: string; org?: string }
+  | {
+      type: 'contact'
+      href: string
+      fn: string
+      detail: string
+      org?: string
+      email?: string
+      tel?: string
+      note?: string
+    }
+
+/** Just the command arm of Entry — the ACTIONS pool never holds rows. */
+type ActionEntry = Extract<Entry, { type: 'action' }>
 
 /** One render row: the entry, its flat selection index, any headings above. */
 interface Row {
@@ -317,13 +341,32 @@ function groupByDay<T extends { when: Date | null }>(items: T[]): { groups: DayG
 /** Per-kind result cap — the pane scrolls, but a wall of 'e' hits helps nobody. */
 const MAX_PER_KIND = 12
 
-const ACTIONS: Entry[] = [
+/** Word-level action match: any query word prefixes or is contained in any
+ *  action-label word, case-insensitive ('togg' → 'Toggle theme', '3' →
+ *  '3-day view', 'sched' → 'Go to Schedule'). Words are whitespace splits
+ *  with edge punctuation stripped, so 'calendar:' still matches 'calendar'.
+ *  Deliberately NOT subsequence-fuzzy. */
+function matchesActionLabel(query: string, label: string): boolean {
+  const words = (s: string): string[] =>
+    s.toLowerCase()
+      .split(/\s+/)
+      .map((w) => w.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ''))
+      .filter((w) => w !== '')
+  const qWords = words(query)
+  if (qWords.length === 0) return false
+  const labelWords = words(label)
+  return qWords.some((q) => labelWords.some((l) => l.includes(q)))
+}
+
+const ACTIONS: ActionEntry[] = [
   { type: 'action', id: 'new-event', label: 'New event', hint: 'N', icon: 'plus', run: requestNewEvent },
   { type: 'action', id: 'new-task', label: 'New task', hint: '⇧N', icon: 'plus', run: () => openQuickAdd('todo') },
   { type: 'action', id: 'new-contact', label: 'New contact', hint: 'C', icon: 'users', run: () => createContact() },
   {
+    // date=today (view param untouched) — a bare `#/` kept CalendarView's
+    // internal date, so the palette landed on a stale far week.
     type: 'action', id: 'go-schedule', label: 'Go to Schedule', hint: '', icon: 'calendar',
-    run: () => { window.location.hash = ROUTES.calendar },
+    run: () => gotoCalendarQuery({ date: dayKey(new Date()) }),
   },
   {
     type: 'action', id: 'go-agenda', label: 'Go to Agenda', hint: '', icon: 'calendar',
@@ -334,6 +377,21 @@ const ACTIONS: Entry[] = [
     run: () => { window.location.hash = ROUTES.contacts },
   },
   { type: 'action', id: 'toggle-theme', label: 'Toggle theme', hint: '', icon: 'sunMoon', run: toggleTheme },
+  {
+    type: 'action', id: 'go-today', label: 'Go to today', hint: 'T', icon: 'calendar',
+    run: () => gotoCalendarQuery({ date: dayKey(new Date()) }),
+  },
+  { type: 'action', id: 'view-day', label: 'Day view', hint: 'D', icon: 'calendar', run: () => gotoCalendarQuery({ view: 'day' }) },
+  { type: 'action', id: 'view-3d', label: '3-day view', hint: '', icon: 'calendar', run: () => gotoCalendarQuery({ view: '3d' }) },
+  { type: 'action', id: 'view-5d', label: '5-day view', hint: '', icon: 'calendar', run: () => gotoCalendarQuery({ view: '5d' }) },
+  { type: 'action', id: 'view-week', label: 'Week view', hint: 'W', icon: 'calendar', run: () => gotoCalendarQuery({ view: 'week' }) },
+  // Hash spells it '2weeks' (savedviews V2_TO_HASH; §31 VIEW_OPTIONS).
+  { type: 'action', id: 'view-2week', label: '2-week view', hint: '⇧W', icon: 'calendar', run: () => gotoCalendarQuery({ view: '2weeks' }) },
+  { type: 'action', id: 'view-month', label: 'Month view', hint: 'M', icon: 'calendar', run: () => gotoCalendarQuery({ view: 'month' }) },
+  {
+    type: 'action', id: 'open-settings', label: 'Open settings', hint: 'S', icon: 'settings',
+    run: () => { window.location.hash = ROUTES.settings },
+  },
 ]
 
 const CREATE_KINDS = ['event', 'todo', 'contact'] as const
@@ -370,6 +428,9 @@ function PaletteCard() {
   }, [])
 
   const trimmed = draft.trim()
+  /** Any DAV account missing its session secret → the corpus is unreachable,
+   *  so search results would silently be empty; say so instead. */
+  const locked = accounts.value.some((a) => a.needsPassword)
   const interp = useMemo(() => interpret(draft), [draft])
   const createKind: CreateKind = kindOverride ?? interp.kind
 
@@ -403,11 +464,35 @@ function PaletteCard() {
         fn: rec.data.fn,
         detail: rec.data.emails[0]?.value ?? rec.data.tels[0]?.value ?? rec.data.org ?? rec.data.title ?? '',
         org: rec.data.org,
+        email: rec.data.emails[0]?.value,
+        tel: rec.data.tels[0]?.value,
+        note: rec.data.note,
       })
       if (out.length >= 20) break
     }
     return out
   }, [query, error])
+
+  /** Full command pool: the static ACTIONS plus one entry per V2 saved view
+   *  (applyView restores visibility + view + today) and per calendar
+   *  collection (schedule-domain visibility toggle). Rebuilt when either
+   *  signal changes; PaletteCard re-renders subscribe via `.value`. */
+  const actions: ActionEntry[] = useMemo(
+    () => [
+      ...ACTIONS,
+      ...savedViewsV2.value.map((v): ActionEntry => ({
+        type: 'action', id: `view-${v.id}`, label: `View: ${v.name}`, hint: '', icon: 'calendar',
+        run: () => { applyView(v.id) },
+      })),
+      ...collections.value
+        .filter((c) => c.kind === 'calendar')
+        .map((c): ActionEntry => ({
+          type: 'action', id: `cal-${c.url}`, label: `Toggle calendar: ${c.name}`, hint: '', icon: 'calendar',
+          run: () => { toggleCalendar(c.url) },
+        })),
+    ],
+    [savedViewsV2.value, collections.value],
+  )
 
   const { rows, count } = useMemo(() => {
     const out: Row[] = []
@@ -415,14 +500,23 @@ function PaletteCard() {
       out.push({ entry, idx: out.length, heading })
     }
     if (trimmed === '') {
-      for (let i = 0; i < ACTIONS.length; i++) {
-        push(ACTIONS[i], i === 0 ? [{ text: 'Actions', level: 'section' }] : undefined)
+      for (let i = 0; i < actions.length; i++) {
+        push(actions[i], i === 0 ? [{ text: 'Actions', level: 'section' }] : undefined)
       }
       return { rows: out, count: out.length }
     }
     // The create row is ALWAYS first for a non-empty query — bare tokens that
     // leave no title ('3pm', 'tomorrow', 'every day') still create something.
     push({ type: 'create' })
+
+    // Matching commands, in a 'Commands' section between the create row and
+    // the search results.
+    let commandsHeaded = false
+    for (const action of actions) {
+      if (!matchesActionLabel(trimmed, action.label)) continue
+      push(action, commandsHeaded ? undefined : [{ text: 'Commands', level: 'section' }])
+      commandsHeaded = true
+    }
 
     // Events and tasks, each day-grouped like MatchResults; the section
     // heading rides the group's first row, the day heading every row's group
@@ -457,10 +551,22 @@ function PaletteCard() {
     }
     for (let i = 0; i < hits.length; i++) {
       const h = hits[i]
-      push({ type: 'contact', href: h.href, fn: h.fn, detail: h.detail }, i === 0 ? [{ text: 'Contacts', level: 'section' }] : undefined)
+      push(
+        {
+          type: 'contact',
+          href: h.href,
+          fn: h.fn,
+          detail: h.detail,
+          org: h.org,
+          email: h.email,
+          tel: h.tel,
+          note: h.note,
+        },
+        i === 0 ? [{ text: 'Contacts', level: 'section' }] : undefined,
+      )
     }
     return { rows: out, count: out.length }
-  }, [trimmed, interp, matches, hits])
+  }, [trimmed, interp, matches, hits, actions])
 
   const sel = Math.min(idx, Math.max(0, count - 1))
   const selRow = rows.find((r) => r.idx === sel)
@@ -508,10 +614,14 @@ function PaletteCard() {
       case 'event':
         closeCommandPalette()
         gotoCalendarQuery({ date: dayKey(entry.item.when) })
+        // Navigate first, then raise the detail request (CalendarView consumes
+        // it after the route settles and opens the popover on the occurrence).
+        requestDetail({ kind: 'event', uid: entry.item.ev.uid, calendarUrl: entry.item.calUrl })
         return
       case 'todo':
         closeCommandPalette()
         gotoCalendarQuery({ view: 'agenda', date: entry.item.when !== null ? dayKey(entry.item.when) : null })
+        requestDetail({ kind: 'todo', uid: entry.item.todo.uid, calendarUrl: entry.item.calUrl })
         return
       case 'contact':
         closeCommandPalette()
@@ -566,13 +676,17 @@ function PaletteCard() {
           value={draft}
           placeholder="Add event, task, or contact — or search…"
           aria-label="Command palette"
+          aria-activedescendant={count > 0 ? `wycal-pal-row-${sel}` : undefined}
           autoComplete="off"
           spellcheck={false}
           onInput={(e) => setDraft(e.currentTarget.value.replace(/\r\n?|\n/g, ' '))}
           onKeyDown={onInputKeyDown}
         />
         <div class="flex min-h-0 flex-1">
-          <div ref={paneRef} class="min-h-0 flex-1 overflow-y-auto p-1.5">
+          <div ref={paneRef} role="listbox" aria-label="Results" class="min-h-0 flex-1 overflow-y-auto p-1.5">
+            {locked && (
+              <p class="px-3 pb-1 pt-1.5 text-xs text-muted">Locked — unlock in Settings to search your data</p>
+            )}
             {rows.map((r) => (
               <ResultRow
                 key={r.idx}
@@ -586,7 +700,9 @@ function PaletteCard() {
                 onRun={() => runEntry(r)}
               />
             ))}
-            {count === 0 && <p class="px-3 py-6 text-center text-sm text-muted">No matches.</p>}
+            {count === 1 && rows[0] !== undefined && rows[0].entry.type === 'create' && (
+              <p class="px-3 py-3 text-center text-sm text-muted">No matches — Enter creates from your text</p>
+            )}
           </div>
           {showPreview && selRow !== undefined && (
             <div class="max-md:hidden w-60 shrink-0 overflow-y-auto border-l border-border p-3">
@@ -618,6 +734,7 @@ const ACTION_ICON = {
   calendar: Icon.calendar,
   users: Icon.users,
   sunMoon: Icon.sunMoon,
+  settings: Icon.settings,
 } as const
 
 function ResultRow(props: {
@@ -648,6 +765,9 @@ function ResultRow(props: {
       <button
         type="button"
         data-idx={row.idx}
+        role="option"
+        aria-selected={selected}
+        id={`wycal-pal-row-${row.idx}`}
         class={cls}
         onMouseDown={(e) => e.preventDefault()}
         onMouseEnter={props.onSelect}
@@ -670,14 +790,17 @@ function RowContent(props: { row: Row; createKind: CreateKind; interp: Interpret
           </span>
           <span class="shrink-0 text-sm font-semibold text-accent">{CREATE_LABEL[props.createKind]}</span>
           {props.interp.title !== '' ? (
-            <span class="min-w-0 truncate text-base text-fg-strong">{props.interp.title}</span>
+            <span class="min-w-0 flex-1 truncate text-base text-fg-strong">{props.interp.title}</span>
           ) : (
-            <span class="min-w-0 truncate text-base italic text-muted">untitled</span>
+            <span class="min-w-0 flex-1 truncate text-base italic text-muted">untitled</span>
           )}
           {props.chips.length > 0 && (
-            <span class="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1">
+            <span class="flex max-w-[60%] shrink-0 flex-wrap items-center justify-end gap-1">
               {props.chips.map((c, i) => (
-                <span key={`${c.start}-${i}`} class={`shrink-0 rounded px-1.5 py-0.5 text-xs ${CHIP_CLASS[c.kind]}`}>
+                <span
+                  key={`${c.start}-${i}`}
+                  class={`max-w-40 truncate rounded px-1.5 py-0.5 text-xs ${CHIP_CLASS[c.kind]}`}
+                >
                   {/* Render-only: strip a leading 'at '/'for '/'@' (offsets untouched). */}
                   {c.text.trim().replace(/^(?:at|for)\s+|^@/i, '')}
                 </span>
@@ -736,7 +859,9 @@ function RowContent(props: { row: Row; createKind: CreateKind; interp: Interpret
             {entry.fn.slice(0, 1).toUpperCase()}
           </span>
           <span class="min-w-0 truncate text-base text-fg-strong">{highlight(entry.fn, props.tokens)}</span>
-          {entry.detail !== '' && <span class="ml-auto min-w-0 truncate pl-2 text-sm text-muted">{entry.detail}</span>}
+          {entry.detail !== '' && (
+            <span class="ml-auto min-w-0 truncate pl-2 text-sm text-muted">{highlight(entry.detail, props.tokens)}</span>
+          )}
         </>
       )
   }
@@ -830,6 +955,9 @@ function PreviewCard(props: { entry: Entry; interp: Interpretation; createKind: 
               ['When', fmtRange(entry.item.when, icsDateToDate(entry.item.ev.end), entry.item.allDay)],
               ...(entry.item.ev.rrule !== undefined ? ([['Repeats', describeRrule(entry.item.ev.rrule)]] as [string, string][]) : []),
               ...(entry.item.ev.location !== undefined && entry.item.ev.location !== '' ? ([['Where', entry.item.ev.location]] as [string, string][]) : []),
+              ...(entry.item.ev.description !== undefined && entry.item.ev.description !== ''
+                ? ([['Notes', entry.item.ev.description]] as [string, string][])
+                : []),
               ['Calendar', entry.item.calName],
             ]}
           />
@@ -858,8 +986,10 @@ function PreviewCard(props: { entry: Entry; interp: Interpretation; createKind: 
       {entry.type === 'contact' && (
         <PreviewRows
           rows={[
-            ...(entry.detail !== '' ? ([['Contact', entry.detail]] as [string, string][]) : []),
+            ...(entry.email !== undefined && entry.email !== '' ? ([['Email', entry.email]] as [string, string][]) : []),
+            ...(entry.tel !== undefined && entry.tel !== '' ? ([['Phone', entry.tel]] as [string, string][]) : []),
             ...(entry.org !== undefined && entry.org !== '' ? ([['Org', entry.org]] as [string, string][]) : []),
+            ...(entry.note !== undefined && entry.note !== '' ? ([['Note', entry.note]] as [string, string][]) : []),
           ]}
         />
       )}

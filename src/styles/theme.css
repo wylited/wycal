@@ -15,7 +15,9 @@
   --border-strong: #c9cdd1;
   --fg: #5c6166;
   --fg-strong: #21252b;
-  --muted: #8a9199;
+  /* AA (§16 wave 16): was #8a9199 (3.05:1 on #fafafa) — #6a737d measures
+     4.61:1 on #fafafa and 4.82:1 on #ffffff, ≥4.5 for the 11-12px muted text. */
+  --muted: #6a737d;
   --accent: #fa8d3e;
   --accent-fg: #ffffff;
   --accent-soft: #fa8d3e26;
@@ -98,7 +100,9 @@
   --border-strong: #3a4150;
   --fg: #bfbdb6;
   --fg-strong: #e6e1cf;
-  --muted: #6c7380;
+  /* AA (§16 wave 16): was #6c7380 (3.75:1 on #131721) — #99a2ae measures
+     6.94:1 on #131721. */
+  --muted: #99a2ae;
   --accent: #ff8f40;
   --accent-fg: #0b0e14;
   --accent-soft: #ff8f4026;
@@ -149,7 +153,8 @@
     --border-strong: #3a4150;
     --fg: #bfbdb6;
     --fg-strong: #e6e1cf;
-    --muted: #6c7380;
+    /* Kept in sync with [data-theme='dark']: #99a2ae = 6.94:1 on #131721. */
+    --muted: #99a2ae;
     --accent: #ff8f40;
     --accent-fg: #0b0e14;
     --accent-soft: #ff8f4026;

@@ -1,7 +1,7 @@
 /**
  * Natural-language quick-add parser (Todoist's NL syntax, CONTRACTS §15):
- * recognizes due-date words ('today'/'tod'/'tomorrow'/'tom'/'tmr', weekdays
- * 'mon'…'sun' with 'next X' = one week out, 'in 3 days'/'in 2 weeks'/'in Nd',
+ * recognizes due-date words ('yesterday'/'today'/'tod'/'tomorrow'/'tom'/'tmr',
+ * weekdays 'mon'…'sun' with 'next X' = one week out, 'in 3 days'/'in 2 weeks'/'in Nd',
  * 'oct 24'/'24 oct'/'10/24'), times ('at 5pm', '5:30pm', '17:00'), priority
  * ('#A'/'#B'/'#C' and '!p1'/'!p2'/'!p3' aliases) and '+tag' tokens — at any
  * position, case-insensitive — strips them from the summary and returns the
@@ -15,6 +15,7 @@
  * | token                      | meaning                                        |
  * |----------------------------|------------------------------------------------|
  * | today, tod                 | today (all-day)                                |
+ * | yesterday                  | yesterday (all-day)                            |
  * | tomorrow, tom, tmr         | tomorrow (all-day)                             |
  * | next week                  | Monday of next week (all-day)                  |
  * | mon…sun (full names too)   | next occurrence of that weekday (today counts) |
@@ -139,7 +140,9 @@ export function describeDue(due: { date: Date; allDay: boolean }): string {
  *  past that, unless the plain wrap already landed in next week (the weekday
  *  passed earlier this week) — then it IS next week's plain date. */
 function weekdayDue(token: string, name: string, next: boolean): QuickAddDue | undefined {
-  const target = WEEKDAYS[name]
+  // The weekday strip is case-insensitive, so 'Friday' must find the
+  // lowercase table key — otherwise capitalized weekdays silently stay text.
+  const target = WEEKDAYS[name.toLowerCase()]
   if (target === undefined) return undefined
   const now = new Date()
   let inDays = (target - now.getDay() + 7) % 7
@@ -343,8 +346,15 @@ function parseTokens(input: string, durations: boolean, skip = 0): TokenPass {
     return inDays(unit.startsWith('w') ? n * 7 : n, m[0] as string)
   }, 'date')
 
-  // 'today'/'tod'/'tomorrow'/'tom'/'tmr'.
-  strip(/\b(today|tod|tomorrow|tom|tmr)\b/gi, (m) => inDays(/^(today|tod)$/i.test(m[1] as string) ? 0 : 1, m[0] as string), 'date')
+  // 'yesterday'/'today'/'tod'/'tomorrow'/'tom'/'tmr'.
+  strip(
+    /\b(yesterday|today|tod|tomorrow|tom|tmr)\b/gi,
+    (m) => {
+      const w = (m[1] as string).toLowerCase()
+      return inDays(w === 'yesterday' ? -1 : w === 'today' || w === 'tod' ? 0 : 1, m[0] as string)
+    },
+    'date',
+  )
 
   // 'next week' → Monday of next week (Monday-first, like 'next mon').
   strip(/\bnext\s+week\b/gi, (m) => {
@@ -432,7 +442,7 @@ function parseTokens(input: string, durations: boolean, skip = 0): TokenPass {
 
   // Durations ('1h', '1h30m', '2 hours', '30m', '90 min', 'for 45m') — hours
   // forms first so they can't be half-eaten by the bare-minutes form; 'for N
-  // <unit>' and bare 'N<unit>' both count. Zero and >24h stay text.
+  // <unit>' and bare 'N<unit>' both count. Zero and >99h stay text.
   if (durations) {
     // '1h', '1h30m', '2 hours', '2h 15m', '1.5h', '2.5 hours' — optional
     // decimal fraction, optional glued/separated minutes.
@@ -441,7 +451,7 @@ function parseTokens(input: string, durations: boolean, skip = 0): TokenPass {
       const frac = m[2] === undefined ? 0 : Number(m[2]) / 10 ** (m[2] as string).length
       const min = m[3] === undefined ? 0 : Number(m[3])
       const mins = Math.round((h + frac) * 60) + min
-      if (h > 23 || min > 59 || mins === 0 || mins > 24 * 60) return false
+      if (h > 99 || min > 59 || mins === 0) return false
       durationMinutes = mins
       return true
     }, 'duration')
@@ -452,7 +462,7 @@ function parseTokens(input: string, durations: boolean, skip = 0): TokenPass {
       const h = Number(m[1])
       const min = Number(m[2])
       const mins = h * 60 + min
-      if (h > 23 || min > 59 || mins === 0 || mins > 24 * 60) return false
+      if (h > 99 || min > 59 || mins === 0) return false
       durationMinutes = mins
       return true
     }, 'duration')

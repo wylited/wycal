@@ -48,6 +48,36 @@ export function bumpDialogClose(): void {
 }
 
 /**
+ * Peek-layer (detail popover) count (wave 16): Event/TodoDetailPopover bump
+ * these instead of the dialog counters. Popovers still suppress ordinary
+ * shortcuts (isDialogOpen counts them) but do NOT block the command palette
+ * — ⌘K bumps `peekClosePing` and opens over them (CalendarView closes its
+ * popover when it sees the ping).
+ */
+export const popoverCount = signal(0)
+
+/** Register an open peek popover (mount); pairs with bumpPopoverClose. */
+export function bumpPopoverOpen(): void {
+  popoverCount.value += 1
+}
+
+/** Unregister an open peek popover (unmount/close). */
+export function bumpPopoverClose(): void {
+  popoverCount.value = Math.max(0, popoverCount.value - 1)
+}
+
+/** Monotonic ping: 'a peek popover should close' (⌘K wants the screen). */
+export const peekClosePing = signal(0)
+
+/**
+ * True when a modal dialog/editor is up (NOT for mere peek popovers). ⌘K and
+ * '/' open the palette over popovers but never over modals.
+ */
+export function isModalOpen(): boolean {
+  return dialogCount.value > 0
+}
+
+/**
  * Toggle sidebar visibility: flips the signal (App/Sidebar render from it)
  * and broadcasts `wycal:sidebar` (detail `{ open }`) for event listeners.
  */
