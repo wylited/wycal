@@ -11,10 +11,13 @@
  *               'daily'/'weekly'/'fortnightly'/'monthly'/'yearly' · plural
  *               weekdays ('gym mondays') → an RRULE fragment
  *               (FREQ=…;INTERVAL=…;BYDAY=…)
+ * - all-day     'all day' / 'all-day' anywhere → allDay (words blanked out
+ *               of the title; the date itself still comes from the base pass)
  * - location    'at <place>' / '@<place>' — tried only where a TIME does not
  *               fit ('at 3pm' is a time, never a place; kashcal's TimeRule
- *               ordering), scanning from the LAST 'at' backwards so a later
- *               time pair can't steal the location
+ *               ordering — day parts like 'at dawn' count as times too),
+ *               scanning from the LAST 'at' backwards so a later time pair
+ *               can't steal the location
  * - contacts    a leading 'contact <name>', or an email / phone token (with
  *               an optional leading verb — 'call john john@x.com') → a
  *               contact candidate {fn, email?, tel?}
@@ -56,7 +59,8 @@ export interface Interpretation {
   when?: Date
   /** The parsed date (event start date or todo due); undefined when none. */
   due?: Date
-  /** Mirrors the base parse: true when nothing timed was parsed. */
+  /** True when nothing timed was parsed or an explicit 'all day' /
+   *  'all-day' was consumed. */
   allDay: boolean
   durationMin?: number
   /** RRULE fragment, e.g. 'FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,WE'. */
@@ -220,11 +224,18 @@ const PLACE_STOP: Record<string, true> = {
   tonight: true,
 }
 
+/** Day-part words: 'at <x>' with one of these is a (potential) time pair,
+ *  never a place — 'attack at dawn' keeps 'at dawn' in the title. */
+const TIME_OF_DAY: Record<string, true> = {
+  dawn: true, dusk: true, noon: true, midnight: true, night: true,
+  morning: true, afternoon: true, evening: true, tonight: true,
+}
+
 /** A follower that makes 'at X' a time pair, not a place (kashcal ordering). */
 function timeShaped(word: Word | undefined): boolean {
   if (word === undefined) return true
   const t = word.text.toLowerCase()
-  return /^\d/.test(t) || t === 'noon' || t === 'midnight' || t === 'tonight'
+  return /^\d/.test(t) || TIME_OF_DAY[t] === true
 }
 
 function scanLocation(input: string): { location: string; start: number; end: number } | undefined {
@@ -235,7 +246,12 @@ function scanLocation(input: string): { location: string; start: number; end: nu
     const atSignForm = ws[i].text.startsWith('@') && ws[i].text.length > 1
     if (!atForm && !atSignForm) continue
     let cursor = i + 1
-    if (timeShaped(ws[cursor])) continue // 'at 3pm' / trailing '@' — try an earlier 'at'
+    // 'at 3pm' / a bare trailing 'at' → try an earlier 'at'. An '@place'
+    // token carries its own place (no follower needed — '@office' at the end
+    // of the line still lands), but its content is still time-checked:
+    // '@3pm'/'@dawn' are handles, not places.
+    if (atForm && timeShaped(ws[cursor])) continue
+    if (atSignForm && timeShaped({ text: ws[i].text.slice(1), start: ws[i].start, end: ws[i].end })) continue
     const placeWords: string[] = []
     if (atSignForm) placeWords.push(ws[i].text.slice(1).replace(/[.,;:!]$/, ''))
     let last = atSignForm ? i : -1
@@ -252,6 +268,28 @@ function scanLocation(input: string): { location: string; start: number; end: nu
     }
     if (placeWords.length === 0 || placeWords.every((p) => p === '')) continue
     return { location: placeWords.join(' '), start: ws[i].start, end: ws[last].end }
+  }
+  return undefined
+}
+
+// ---------------------------------------------------------------------------
+// All-day ('all day' / 'all-day' anywhere → allDay; words blanked)
+// ---------------------------------------------------------------------------
+
+/**
+ * 'all day' (two words) or 'all-day'/'allday' (one hyphenated token). The
+ * words carry no date themselves — the base pass keeps parsing the line's
+ * date; blanking here just keeps them out of the title and flags allDay.
+ */
+function scanAllDay(input: string): { start: number; end: number } | undefined {
+  const ws = words(input)
+  for (let i = 0; i < ws.length; i++) {
+    const t = ws[i].text.toLowerCase()
+    if (/^all-?days?$/.test(t)) return { start: ws[i].start, end: ws[i].end }
+    if (t === 'all') {
+      const next = bareWord(ws[i + 1])
+      if (next === 'day' || next === 'days') return { start: ws[i].start, end: ws[i + 1].end }
+    }
   }
   return undefined
 }
@@ -343,10 +381,10 @@ function detectContact(
 
 /**
  * Parse one palette line: contact detection first (it owns the line), then
- * the recurrence + location overlays on a length-preserving copy, then the
- * shared quickAdd token pass for dates/times/durations/priority/tags. The
- * returned chips (overlay + base, sorted by position) drive the live
- * chip-highlighted create preview.
+ * the recurrence + all-day + location overlays on a length-preserving copy,
+ * then the shared quickAdd token pass for dates/times/durations/priority/
+ * tags. The returned chips (overlay + base, sorted by position) drive the
+ * live chip-highlighted create preview.
  */
 export function interpret(input: string): Interpretation {
   const contact = detectContact(input)
@@ -370,6 +408,15 @@ export function interpret(input: string): Interpretation {
     padded = blank(padded, rec.start, rec.end)
     chips.push({ start: rec.start, end: rec.end, text: input.slice(rec.start, rec.end), kind: 'recurrence' })
   }
+  // Before the location scan: 'at cafe all day' must not swallow the words
+  // into the place name.
+  const ad = scanAllDay(input)
+  if (ad !== undefined) {
+    padded = blank(padded, ad.start, ad.end)
+    // kind 'date' (not a new ChipKind): the palette's CHIP_CLASS is a closed
+    // Record over the union, and 'all day' is date-shaped preview material.
+    chips.push({ start: ad.start, end: ad.end, text: input.slice(ad.start, ad.end), kind: 'date' })
+  }
   const loc = scanLocation(padded)
   if (loc !== undefined) {
     padded = blank(padded, loc.start, loc.end)
@@ -380,19 +427,39 @@ export function interpret(input: string): Interpretation {
   for (const c of base.chips) chips.push(c)
   chips.sort((a, b) => a.start - b.start || a.end - b.end)
 
+  // Default kind: an EVENT as soon as any event-shaped signal parsed — a
+  // clock time, a duration, a recurrence, a location, or an explicit
+  // 'all day'. Only a bare line (or a date-only one, whose date reads as the
+  // todo's due) stays a TODO: 'buy milk' and 'meet tomorrow' are dated
+  // tasks, 'meet at 3pm' is an event. A forced 'todo:'/'event:'/'meet:'
+  // prefix (same grammar as quickAdd's FORCED_PREFIX) pins the kind ahead
+  // of this rule.
+  const forcedKind = /^\s*(?:todo|task|event|meet|meeting)\s*:/i.test(input)
+  const eventShaped =
+    (base.dueOrStart !== undefined && !base.allDay) || // clock time
+    base.durationMinutes !== undefined ||
+    rec !== undefined ||
+    loc !== undefined ||
+    ad !== undefined
+  const kind: InterpKind = forcedKind ? base.kind : eventShaped ? 'event' : base.kind
+  const allDay = ad !== undefined || base.allDay
+
   const confidence: Interpretation['confidence'] =
     base.dueOrStart !== undefined && !base.allDay
       ? 'high'
-      : rec !== undefined || base.durationMinutes !== undefined || base.dueOrStart !== undefined
+      : rec !== undefined ||
+          ad !== undefined ||
+          base.durationMinutes !== undefined ||
+          base.dueOrStart !== undefined
         ? 'medium'
         : 'low'
 
   return {
-    kind: rec !== undefined ? 'event' : base.kind,
+    kind,
     title: base.summary,
-    when: base.dueOrStart !== undefined && !base.allDay ? base.dueOrStart.date : undefined,
+    when: base.dueOrStart !== undefined && !allDay ? base.dueOrStart.date : undefined,
     due: base.dueOrStart?.date,
-    allDay: base.allDay,
+    allDay,
     durationMin: base.durationMinutes,
     rrule: rec?.rrule,
     location: loc?.location,

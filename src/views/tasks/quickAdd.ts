@@ -16,19 +16,30 @@
  * |----------------------------|------------------------------------------------|
  * | today, tod                 | today (all-day)                                |
  * | tomorrow, tom, tmr         | tomorrow (all-day)                             |
+ * | next week                  | Monday of next week (all-day)                  |
  * | mon…sun (full names too)   | next occurrence of that weekday (today counts) |
  * | next mon                   | one week past 'mon' when 'mon' hasn't already  |
  * |                            | wrapped into next week                          |
  * | in Nd / N day(s) / N       | N days from today (all-day)                    |
  * |   week(s)                  | N×7 days from today (all-day)                  |
  * | oct 24 / 24 oct (+ordinals)| that calendar date this year (all-day)         |
+ * | 31st / 3rd …               | that day of this month (next month when past,  |
+ * |                            | all-day)                                       |
  * | 10/24                      | month/day this year (all-day)                  |
  * | at 5pm / 5pm / 5:30pm      | wall time merged into the matched date (today  |
  * | 17:00 / at 17:00           | when none) → timed due                         |
+ * | 3pm to 4pm / 14:00-15:30   | time range: the start becomes the due/start    |
+ * | 3-4pm / 10 to 11am         | and the diff becomes the duration (both times  |
+ * |                            | and the separator word consumed)               |
+ * | noon / midnight            | 12:00 / 00:00 (same treatment as '3pm')        |
+ * | at 5 (bare hour)           | 1–6 → pm, 7–11 → am, 12 → pm; only when no     |
+ * |                            | unit word follows ('5 minutes'/'5 days' keep   |
+ * |                            | their duration/date meaning)                   |
+ * | all day                    | the parsed date becomes all-day                |
  * | #A / #B / #C               | priority 1 / 5 / 9                             |
  * | !p1 / !p2 / !p3            | priority 1 / 5 / 9                             |
- * | +tag                       | tag (must start with a letter, so '+1d' stays  |
- * |                            | text)                                          |
+ * | +tag / #tag                | tag (must start with a letter, so '+1d' and    |
+ * |                            | '#1d' stay text; #A/#B/#C stay priority)       |
  *
  * Later matches of the same kind override earlier ones ('fri 10/24' → Oct 24);
  * a second date token replaces the first, a second time token replaces the
@@ -36,13 +47,14 @@
  * summary untouched.
  *
  * `parseQuickAddLine` wraps the same token pass for the global quick-add
- * dialog (CONTRACTS §16 Q): a leading `todo:`/`task:`/`event:`/`meet:`/
- * `meeting:` prefix forces the kind; otherwise a parsed wall time or a
- * duration token ('30m', '1h', '1h30', '2 hours', 'for 45 min' — stripped
- * only in this line pass, so todo quick-adds keep '30m' as summary text)
- * implies a timed EVENT, and a date-only match or nothing implies a TODO.
- * Returns { kind, summary, dueOrStart, durationMinutes?, allDay, priority?,
- * tags }.
+ * dialog (CONTRACTS §16 Q): a leading `todo`/`task` prefix (colon optional:
+ * 'todo: call mom' or 'todo call mom') or `event:`/`meet:`/`meeting:` prefix
+ * (colon still required) forces the kind; otherwise a parsed wall time or a
+ * duration token ('30m', '1h', '1h30', '2 hours', '1.5 hours', 'for 45 min' —
+ * stripped only in this line pass, so todo quick-adds keep '30m' as summary
+ * text) implies a timed EVENT, and a date-only match or nothing implies a
+ * TODO. Returns { kind, summary, dueOrStart, durationMinutes?, allDay,
+ * priority?, tags }.
  */
 
 /** One parsed due: the matched token text, the resolved local date, its form. */
@@ -171,6 +183,8 @@ function parseTokens(input: string, durations: boolean, skip = 0): TokenPass {
   let due: QuickAddDue | undefined
   let priority: 1 | 5 | 9 | undefined
   let durationMinutes: number | undefined
+  /** An 'all day' token was consumed → the final due (if any) is all-day. */
+  let forceAllDay = false
   const tags: string[] = []
 
   /**
@@ -226,6 +240,22 @@ function parseTokens(input: string, durations: boolean, skip = 0): TokenPass {
     return true
   }
 
+  /** Bare ordinal day ('31st', '3rd'): that day of the current month, next
+   *  month when already past; impossible days (Feb 31, and days the next
+   *  month does not have either) rejected. */
+  function onOrdinalDay(day: number, text: string): boolean {
+    const now = new Date()
+    const date = new Date(now.getFullYear(), now.getMonth(), day)
+    if (date.getDate() !== day) return false
+    if (date.getTime() < new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()) {
+      date.setMonth(date.getMonth() + 1)
+      if (date.getDate() !== day) return false
+    }
+    dateText = text
+    due = { text, date, allDay: true }
+    return true
+  }
+
   /** Merge a wall time into the matched date (today when none) → timed due. */
   function atTime(hourIn: number, minute: number, suffix: 'am' | 'pm' | undefined, text: string): boolean {
     if (!Number.isInteger(minute) || minute < 0 || minute > 59) return false
@@ -239,6 +269,37 @@ function parseTokens(input: string, durations: boolean, skip = 0): TokenPass {
     date.setHours(hour, minute, 0, 0)
     timeText = text
     due = { text: '', date, allDay: false }
+    return true
+  }
+
+  /** Time range: the start merges via atTime and the end − start diff (a
+   *  negative one wraps past midnight) becomes the duration. Both ends are
+   *  validated before anything mutates, so a rejected range leaves the text
+   *  for the plain time strips. */
+  function rangeTimes(
+    h1: number,
+    m1: number,
+    s1: 'am' | 'pm' | undefined,
+    h2: number,
+    m2: number,
+    s2: 'am' | 'pm' | undefined,
+    text: string,
+  ): boolean {
+    const hourOf = (h: number, min: number, s: 'am' | 'pm' | undefined): number | undefined => {
+      if (min > 59) return undefined
+      if (s !== undefined) {
+        if (h < 1 || h > 12) return undefined
+        return (h % 12) + (s === 'pm' ? 12 : 0)
+      }
+      return h > 23 ? undefined : h
+    }
+    const start = hourOf(h1, m1, s1)
+    const end = hourOf(h2, m2, s2)
+    if (start === undefined || end === undefined) return false
+    const diff = end * 60 + m2 - (start * 60 + m1)
+    if (diff === 0) return false
+    if (!atTime(h1, m1, s1, text)) return false
+    durationMinutes = diff > 0 ? diff : diff + 24 * 60
     return true
   }
 
@@ -260,6 +321,21 @@ function parseTokens(input: string, durations: boolean, skip = 0): TokenPass {
     return true
   }, 'tag')
 
+  // '#tag' tokens → tags as well; the single letters are already gone (the
+  // '#A'/'#B'/'#C' priority strip above consumed them) and a leading letter
+  // keeps '#1d' as text.
+  strip(/\B#([A-Za-z][\w-]*)/g, (m) => {
+    const tag = m[1] as string
+    if (!tags.includes(tag)) tags.push(tag)
+    return true
+  }, 'tag')
+
+  // 'all day' (anywhere) — the final due, if any, loses its wall time.
+  strip(/\ball\s+day\b/gi, () => {
+    forceAllDay = true
+    return true
+  }, 'date')
+
   // 'in 3 days' / 'in 2 weeks' / 'in 5d'.
   strip(/\bin\s+(\d{1,3})\s*(d|day|days|w|week|weeks)\b/gi, (m) => {
     const n = Number(m[1])
@@ -269,6 +345,12 @@ function parseTokens(input: string, durations: boolean, skip = 0): TokenPass {
 
   // 'today'/'tod'/'tomorrow'/'tom'/'tmr'.
   strip(/\b(today|tod|tomorrow|tom|tmr)\b/gi, (m) => inDays(/^(today|tod)$/i.test(m[1] as string) ? 0 : 1, m[0] as string), 'date')
+
+  // 'next week' → Monday of next week (Monday-first, like 'next mon').
+  strip(/\bnext\s+week\b/gi, (m) => {
+    const now = new Date()
+    return inDays(7 - ((now.getDay() + 6) % 7), m[0] as string)
+  }, 'date')
 
   // Weekdays, bare or 'next'-prefixed (full names listed before abbreviations).
   strip(
@@ -300,6 +382,30 @@ function parseTokens(input: string, durations: boolean, skip = 0): TokenPass {
     'date',
   )
 
+  // Bare ordinals ('31st', '1st', '22nd') — the month forms above already
+  // consumed their ordinals, so whatever is left is a day of the month.
+  strip(/\b(\d{1,2})(?:st|nd|rd|th)\b/gi, (m) => onOrdinalDay(Number(m[1]), m[0] as string), 'date')
+
+  // Time ranges, 24h ('14:00-15:30') then 12h with the END suffix required
+  // ('3pm to 4pm', '3-4pm', '10 to 11am' — a suffix-less start inherits the
+  // end's am/pm). The whole range — both times AND the separator — is one
+  // consumed chip: the start becomes the due, the diff the duration.
+  strip(/\b(\d{1,2}):(\d{2})\s*(?:to|-|–)\s*(\d{1,2}):(\d{2})\b/g, (m) =>
+    rangeTimes(Number(m[1]), Number(m[2]), undefined, Number(m[3]), Number(m[4]), undefined, m[0] as string), 'time')
+  strip(
+    /\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s*(?:to|-|–)\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/gi,
+    (m) => {
+      const endSuffix = (m[6] as string).toLowerCase() as 'am' | 'pm'
+      const startSuffix = m[3] === undefined ? endSuffix : ((m[3] as string).toLowerCase() as 'am' | 'pm')
+      return rangeTimes(
+        Number(m[1]), m[2] === undefined ? 0 : Number(m[2]), startSuffix,
+        Number(m[4]), m[5] === undefined ? 0 : Number(m[5]), endSuffix,
+        m[0] as string,
+      )
+    },
+    'time',
+  )
+
   // Times, 24h first ('17:00', 'at 9:15'), then 12h ('at 5pm', '5:30pm') —
   // both merge into the matched date and make the due timed.
   strip(/\b(?:at\s+)?(\d{1,2}):(\d{2})\s*(am|pm)?\b/gi, (m) =>
@@ -307,15 +413,34 @@ function parseTokens(input: string, durations: boolean, skip = 0): TokenPass {
   strip(/\b(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/gi, (m) =>
     atTime(Number(m[1]), m[2] === undefined ? 0 : Number(m[2]), (m[3] as string).toLowerCase() as 'am' | 'pm', m[0] as string), 'time')
 
+  // 'noon' / 'midnight' (optional 'at') — same treatment as '3pm'.
+  strip(/\b(?:at\s+)?(noon|midnight)\b/gi, (m) =>
+    atTime((m[1] as string).toLowerCase() === 'noon' ? 12 : 0, 0, undefined, m[0] as string), 'time')
+
+  // Bare hour after 'at' ('meet at 5' → 5pm, 'at 8' → 8am; 1–6 → pm, 7–11 →
+  // am, 12 → pm) — only when nothing word-like follows, so 'at 5 minutes' and
+  // 'at 5 days' keep their duration/date meanings and 'at 5pm' is untouched.
+  strip(
+    /\bat\s+(\d{1,2})(?![\d:./])(?!\s*(?:[ap]m|minutes?|mins?|hours?|hrs?|days?|weeks?|[mdhw]|st|nd|rd|th)\b)/gi,
+    (m) => {
+      const h = Number(m[1])
+      if (h < 1 || h > 12) return false
+      return atTime(h, 0, h <= 6 || h === 12 ? 'pm' : 'am', m[0] as string)
+    },
+    'time',
+  )
+
   // Durations ('1h', '1h30m', '2 hours', '30m', '90 min', 'for 45m') — hours
   // forms first so they can't be half-eaten by the bare-minutes form; 'for N
   // <unit>' and bare 'N<unit>' both count. Zero and >24h stay text.
   if (durations) {
-    // '1h', '1h30m', '2 hours', '2h 15m' — optional glued/separated minutes.
-    strip(/\b(?:for\s+)?(\d{1,3})\s*(?:hours?|hrs?|h)\s*(?:(\d{1,2})\s*(?:m|min|mins|minutes?))?\b/gi, (m) => {
+    // '1h', '1h30m', '2 hours', '2h 15m', '1.5h', '2.5 hours' — optional
+    // decimal fraction, optional glued/separated minutes.
+    strip(/\b(?:for\s+)?(\d{1,3})(?:\.(\d{1,2}))?\s*(?:hours?|hrs?|h)\s*(?:(\d{1,2})\s*(?:m|min|mins|minutes?))?\b/gi, (m) => {
       const h = Number(m[1])
-      const min = m[2] === undefined ? 0 : Number(m[2])
-      const mins = h * 60 + min
+      const frac = m[2] === undefined ? 0 : Number(m[2]) / 10 ** (m[2] as string).length
+      const min = m[3] === undefined ? 0 : Number(m[3])
+      const mins = Math.round((h + frac) * 60) + min
       if (h > 23 || min > 59 || mins === 0 || mins > 24 * 60) return false
       durationMinutes = mins
       return true
@@ -339,6 +464,14 @@ function parseTokens(input: string, durations: boolean, skip = 0): TokenPass {
     }, 'duration')
   }
 
+  // 'all day' overrides a parsed wall time: the date resets to midnight, the
+  // flag flips, and the time text leaves due.text (so hadTime — and with it
+  // the line-pass EVENT inference — follows the date again).
+  if (forceAllDay && due !== undefined && !due.allDay) {
+    due.date = new Date(due.date.getFullYear(), due.date.getMonth(), due.date.getDate())
+    due.allDay = true
+    timeText = ''
+  }
   if (due !== undefined) due.text = [dateText, timeText].filter((t) => t !== '').join(' ')
   // Collapse the gaps left by stripped tokens; tidy space-before-punctuation
   // and dangling edge separators.
@@ -351,16 +484,18 @@ function parseTokens(input: string, durations: boolean, skip = 0): TokenPass {
   return { summary, due, priority, tags, hadTime: timeText !== '', durationMinutes, chips }
 }
 
-/** Forced-kind prefixes: 'todo:'/'task:' → todo, 'event:'/'meet:'/'meeting:'
- *  → event (case-insensitive, start of the trimmed line). */
-const FORCED_PREFIX = /^\s*(todo|task|event|meet|meeting)\s*:/i
+/** Forced-kind prefixes: 'todo:'/'task:' → todo — the colon is optional since
+ *  wave 15 ('todo call mom'); 'event:'/'meet:'/'meeting:' → event (colon still
+ *  required, so 'event night' stays plain text). Case-insensitive, start of
+ *  the trimmed line. */
+const FORCED_PREFIX = /^\s*(?:(todo|task)\b\s*:?|(event|meet|meeting)\b\s*:)/i
 
 /**
  * Full-line parse for the global quick-add dialog (CONTRACTS §16 Q): the
  * forced-kind prefix wins; otherwise a parsed wall time or a duration token
  * implies a timed EVENT (weekday + time pairs land here too), a date-only
  * match or nothing implies a TODO. All todo tokens (dates, times, priorities,
- * +tags) behave exactly as in parseQuickAdd; the summary comes back with
+ * +/#tags) behave exactly as in parseQuickAdd; the summary comes back with
  * every recognized token stripped, and `chips` records each consumed token's
  * span in the caller's input coordinates (command/nl.ts live preview).
  */
@@ -368,7 +503,7 @@ export function parseQuickAddLine(input: string): ParsedQuickAddLine {
   let forced: QuickAddKind | undefined
   const m = FORCED_PREFIX.exec(input)
   if (m !== null) {
-    forced = /^(todo|task)$/i.test(m[1]) ? 'todo' : 'event'
+    forced = m[1] !== undefined ? 'todo' : 'event'
   }
   // The forced prefix is blanked inside parseTokens (skip), so chip offsets
   // stay valid against the full input line.

@@ -146,6 +146,18 @@ export function toIcsDateInput(date: Date, allDay: boolean, tzid?: string, utcFo
 }
 
 /**
+ * Timed IcsDate carrying the local *wall* time (encoded as-if-UTC with
+ * `floating: true`), so read-back (icsDateToDate) restores the same wall
+ * time regardless of zone. `toIcsDateInput(d, false)` must not be used for
+ * new saves here — it stores the true instant, which shifts by the zone
+ * offset when the floating form is read back as wall time.
+ */
+export function floatingWallIso(d: Date): IcsDate {
+  const wall = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes()))
+  return { utc: wall.toISOString(), floating: true }
+}
+
+/**
  * IcsDate → true instant. All-day → local midnight of the calendar date.
  * Floating → the wall time interpreted in the system zone.
  *

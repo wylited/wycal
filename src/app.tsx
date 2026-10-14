@@ -29,6 +29,7 @@ import { ScratchNotes } from './views/notes/ScratchNotes';
 import { SettingsView } from './views/settings/SettingsView';
 import SavedComposite from './views/search/SavedComposite';
 import { EventEditor } from './views/event-editor/EventEditor';
+import { TodoEditor } from './views/tasks/TodoEditorModal';
 import { QuickAddDialog, openQuickAdd } from './views/quickadd/QuickAddDialog';
 import {
   CommandPalette,
@@ -269,6 +270,7 @@ export function App() {
       <ToastHost />
       <ScratchNotes />
       <EventEditor />
+      <TodoEditor />
       <QuickAddDialog />
       <CommandPalette />
       <HelpOverlay />

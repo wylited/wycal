@@ -26,6 +26,13 @@
   --overlay: #5c616633;
   --focus-ring: #55b4d4;
 
+  /* Chip inks (§27 palette chips): AA ≥4.5:1 for 12px text on the matching
+     soft fill over --surface — the bright accent/warning/danger tokens read
+     ~2:1 in light mode. Dark themes re-resolve these to the bright tokens. */
+  --accent-ink: #9a3412;
+  --warning-ink: #854d0e;
+  --danger-ink: #b91c1c;
+
   /* Event palette — calendar colors, solid + -soft variant (design.md §1) */
   --ev-blue: #55b4d4;
   --ev-blue-soft: #55b4d426;
@@ -61,6 +68,7 @@
   --r-full: 999px;
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.08);
   --shadow-2: 0 8px 28px rgba(0, 0, 0, 0.18);
+  --shadow-3: 0 16px 48px -12px rgb(0 0 0 / 0.25);
 
   /* Spacing scale (design.md §3) */
   --sp-2: 2px;
@@ -101,6 +109,10 @@
   --overlay: #05070a99;
   --focus-ring: #39bae6;
 
+  --accent-ink: #ff8f40;
+  --warning-ink: #ffcc66;
+  --danger-ink: #f07178;
+
   --ev-blue: #39bae6;
   --ev-blue-soft: #39bae626;
   --ev-green: #aad94c;
@@ -121,6 +133,7 @@
   /* Dark: same structure, higher shadow alpha (design.md §3). */
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.45);
   --shadow-2: 0 8px 28px rgba(0, 0, 0, 0.55);
+  --shadow-3: 0 16px 48px -12px rgb(0 0 0 / 0.55);
 }
 
 /* Keep this block's values in sync with [data-theme='dark'] above. */
@@ -147,6 +160,10 @@
     --overlay: #05070a99;
     --focus-ring: #39bae6;
 
+    --accent-ink: #ff8f40;
+    --warning-ink: #ffcc66;
+    --danger-ink: #f07178;
+
     --ev-blue: #39bae6;
     --ev-blue-soft: #39bae626;
     --ev-green: #aad94c;
@@ -166,6 +183,7 @@
 
     --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.45);
     --shadow-2: 0 8px 28px rgba(0, 0, 0, 0.55);
+    --shadow-3: 0 16px 48px -12px rgb(0 0 0 / 0.55);
   }
 }
 
@@ -662,4 +680,36 @@ body {
 
 .chip-row::-webkit-scrollbar {
   height: 4px;
+}
+
+/* --- §27 Command palette (CommandPalette.tsx) ---
+   Real elevation: Tailwind's shadow-2xl composes a transparent color in this
+   token setup, so the panel floated unanchored — --shadow-3 is the theme-aware
+   overlay-card shadow (0.25 light / 0.55 dark). */
+.wycal-palette-panel {
+  box-shadow: var(--shadow-3);
+}
+
+/* Parsed-chip tints, 12px text → AA ≥4.5:1. Light mode pairs a darkened
+   --*-ink text with the soft fill (the bright tokens read ~2:1 there); dark
+   mode re-resolves the inks to the bright tokens, which pass on dark fills.
+   Neutrals read --fg: --muted fails on --surface-3 in both themes. */
+.wycal-pchip-accent {
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+
+.wycal-pchip-warning {
+  background: color-mix(in srgb, var(--warning) 15%, transparent);
+  color: var(--warning-ink);
+}
+
+.wycal-pchip-danger {
+  background: var(--danger-soft);
+  color: var(--danger-ink);
+}
+
+.wycal-pchip-neutral {
+  background: var(--surface-3);
+  color: var(--fg);
 }

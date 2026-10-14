@@ -8,6 +8,7 @@ import { syncState } from '../../lib/sync/engine'
 import type { Vcard } from '../../lib/vcard/types'
 import { Icon } from '../../ui/icons'
 import { ContactEditor } from './ContactEditor'
+import { consumeContactPrefill, pendingContactPrefill } from './prefill'
 import { ContactAvatar, ContactDetailPopover, displayOrg } from './ContactDetailPopover'
 
 /** Contacts pane (design.md §5): search, card grid, click-to-inspect popover.
@@ -45,8 +46,24 @@ export function ContactsView() {
   // the create editor. The command palette attaches a prefill candidate
   // ({fn, email?, tel?}) in the event detail.
   const [createPrefill, setCreatePrefill] = useState<{ fn: string; email?: string; tel?: string } | null>(null)
+  // Palette → contacts handoff: prefill.ts's pendingContactPrefill survives
+  // the route change that mounts us (the wycal:newcontact event below only
+  // reaches an already-mounted view). Consumed first + cleared one-shot, so
+  // a stale signal can never re-open the editor on a later mount.
+  useEffect(() => {
+    const p = consumeContactPrefill()
+    if (p !== null && !editorOpen) {
+      setCreatePrefill(p)
+      setEditing(null)
+      setEditorOpen(true)
+    }
+    // Mount-only: the prefill is a one-shot handoff, not reactive state.
+  }, [])
   useEffect(() => {
     const onNewContact = (e: Event): void => {
+      // Same-route palette create: the event wins here, so drop any pending
+      // signal — whichever path opens the editor, the other stays empty.
+      pendingContactPrefill.value = null
       const prefill = (e as CustomEvent).detail?.prefill as { fn: string; email?: string; tel?: string } | undefined
       setCreatePrefill(prefill ?? null)
       setEditing(null)

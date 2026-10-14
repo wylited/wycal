@@ -7,11 +7,16 @@
  * parsed chips highlighted); below it, search results from searchEngine
  * `matchUniverse` (events/todos, day-grouped like MatchResults) plus contacts
  * (SidebarSearch's plain-text contact matching pattern). ↑/↓ move the
- * selection, Enter executes, Tab cycles the create kind (event↔task↔contact),
- * Esc closes and restores focus, hover selects. Creating routes through the
- * existing dialogs: events/tasks via `openQuickAdd(kind, rawLine)` prefill,
- * contacts via the `wycal:newcontact` window event carrying `detail.prefill
- * {fn, email, tel}`. Empty input shows quick actions.
+ * selection, Enter executes, Tab/Shift+Tab cycle the create kind
+ * (event↔task↔contact, forward/back), Esc closes and restores focus, hover
+ * selects. Creating routes through the existing dialogs: events/tasks via
+ * `openQuickAddFields(...)` — the parsed Interpretation handed over as
+ * structured fields so the dialog never re-parses (the base grammar would
+ * drop the recurrence/location overlays) — contacts via the
+ * `pendingContactPrefill` signal (set before navigating; ContactsView
+ * consumes it on mount) plus the `wycal:newcontact` window event carrying
+ * `detail.prefill {fn, email, tel}` for the already-mounted case. Empty input
+ * shows quick actions; a non-empty query always shows the create row.
  *
  * Mounted once by app.tsx next to QuickAddDialog; ⌘K/Ctrl+K toggles, '/'
  * opens (the palette is a superset of the old sidebar-search focus). Open
@@ -28,7 +33,8 @@ import { icsDateToDate, prioLetter } from '../../lib/ics/types'
 import { dayKey, fmtDate, fmtTime } from '../../lib/util/date'
 import { gotoCalendarQuery, ROUTES } from '../../routes'
 import { Icon } from '../../ui/icons'
-import { openQuickAdd } from '../quickadd/QuickAddDialog'
+import { pendingContactPrefill } from '../contacts/prefill'
+import { openQuickAdd, openQuickAddFields } from '../quickadd/QuickAddDialog'
 import { filterMatchItems, matchUniverse, tokenizeQuery } from '../search/searchEngine'
 import type { EventItem, TodoItem } from '../search/searchEngine'
 import { interpret } from './nl'
@@ -81,10 +87,13 @@ export function CommandPalette() {
 // Shared helpers
 // ---------------------------------------------------------------------------
 
-/** 'New contact' path: navigate, then raise wycal:newcontact — now + next
- *  macrotask (pingRouteView pattern) so the just-mounted view catches it.
- *  detail.prefill carries the NL candidate {fn, email, tel}. */
+/** 'New contact' path: stamp the structured prefill (ContactsView consumes it
+ *  on mount, so the route change can't race it away), navigate, then raise
+ *  wycal:newcontact — now + next macrotask (pingRouteView pattern) for the
+ *  already-mounted case. detail.prefill carries the NL candidate {fn, email,
+ *  tel}; the no-candidate action passes a blank fn. */
 function createContact(prefill?: { fn: string; email?: string; tel?: string }): void {
+  pendingContactPrefill.value = prefill ?? { fn: '' }
   if (window.location.hash !== `#${ROUTES.contacts}`) window.location.hash = ROUTES.contacts
   const fire = (): void => {
     window.dispatchEvent(new CustomEvent('wycal:newcontact', { detail: { prefill } }))
@@ -150,17 +159,47 @@ function fmtMinutes(min: number): string {
   return m === 0 ? `${h}h` : `${h}h ${m}m`
 }
 
-/** Parsed-chip tint per kind (Tailwind tokens only — app.css is wave-shared). */
+/** Wrap the first occurrence of each query token in the title with <mark>
+ *  (case-insensitive substring; overlaps keep the earlier hit). */
+function highlight(title: string, tokens: string[]): string | (string | JSX.Element)[] {
+  if (title === '' || tokens.length === 0) return title
+  const lower = title.toLowerCase()
+  const ranges: [number, number][] = []
+  for (const t of tokens) {
+    const at = lower.indexOf(t.toLowerCase())
+    if (at >= 0) ranges.push([at, at + t.length])
+  }
+  if (ranges.length === 0) return title
+  ranges.sort((a, b) => a[0] - b[0])
+  const out: (string | JSX.Element)[] = []
+  let pos = 0
+  for (const [start, end] of ranges) {
+    if (start < pos) continue
+    if (start > pos) out.push(title.slice(pos, start))
+    out.push(
+      <mark key={start} class="bg-transparent text-accent font-semibold">
+        {title.slice(start, end)}
+      </mark>,
+    )
+    pos = end
+  }
+  if (pos < title.length) out.push(title.slice(pos))
+  return out
+}
+
+/** Parsed-chip tint per kind — theme.css §27 component classes: light-mode
+ *  bright tokens read ~2:1 on soft fills, so 12px AA text needs the -ink
+ *  tokens (dark mode resolves them back to the bright tokens). */
 const CHIP_CLASS: Record<Chip['kind'], string> = {
-  date: 'bg-accent-soft text-accent',
-  time: 'bg-accent-soft text-accent',
-  duration: 'bg-surface-3 text-fg',
-  priority: 'bg-danger-soft text-danger',
-  tag: 'bg-surface-3 text-muted',
-  recurrence: 'bg-accent-soft text-accent',
-  location: 'bg-warning/15 text-warning',
-  'contact-name': 'bg-accent-soft text-accent',
-  'contact-info': 'bg-surface-3 text-fg',
+  date: 'wycal-pchip-accent',
+  time: 'wycal-pchip-accent',
+  duration: 'wycal-pchip-neutral',
+  priority: 'wycal-pchip-danger',
+  tag: 'wycal-pchip-neutral',
+  recurrence: 'wycal-pchip-accent',
+  location: 'wycal-pchip-warning',
+  'contact-name': 'wycal-pchip-accent',
+  'contact-info': 'wycal-pchip-neutral',
 }
 
 /** Merge adjacent date+time chips so 'tomorrow 12:30' reads as one fragment. */
@@ -181,6 +220,7 @@ interface ContactHit {
   href: string
   fn: string
   detail: string
+  org?: string
 }
 
 /** Text tokens of a query for the contacts pass (contacts ignore the keyword grammar). */
@@ -236,7 +276,7 @@ type Entry =
     }
   | { type: 'event'; item: EventItem }
   | { type: 'todo'; item: TodoItem }
-  | { type: 'contact'; href: string; fn: string; detail: string }
+  | { type: 'contact'; href: string; fn: string; detail: string; org?: string }
 
 /** One render row: the entry, its flat selection index, any headings above. */
 interface Row {
@@ -348,17 +388,25 @@ function PaletteCard() {
     () => (error !== null || query === '' ? [] : filterMatchItems(matchUniverse.value, tokens)),
     [query, error, tokens],
   )
+  /** Text tokens only, for row-title <mark> highlighting. */
+  const hlTokens = useMemo(() => tokens.filter((t) => t.kind === 'text').map((t) => t.value), [tokens])
   const hits: ContactHit[] = useMemo(() => {
     const q = contactTokens(query)
     if (error !== null || q.length === 0) return []
-    return [...contacts.value.values()]
-      .filter((rec) => matchContacts(rec.data, q))
-      .slice(0, 20)
-      .map((rec) => ({
+    const out: ContactHit[] = []
+    const seen = new Set<string>()
+    for (const rec of contacts.value.values()) {
+      if (seen.has(rec.href) || !matchContacts(rec.data, q)) continue
+      seen.add(rec.href)
+      out.push({
         href: rec.href,
         fn: rec.data.fn,
-        detail: rec.data.emails[0]?.value ?? rec.data.org ?? rec.data.title ?? '',
-      }))
+        detail: rec.data.emails[0]?.value ?? rec.data.tels[0]?.value ?? rec.data.org ?? rec.data.title ?? '',
+        org: rec.data.org,
+      })
+      if (out.length >= 20) break
+    }
+    return out
   }, [query, error])
 
   const { rows, count } = useMemo(() => {
@@ -372,7 +420,9 @@ function PaletteCard() {
       }
       return { rows: out, count: out.length }
     }
-    if (interp.title !== '') push({ type: 'create' })
+    // The create row is ALWAYS first for a non-empty query — bare tokens that
+    // leave no title ('3pm', 'tomorrow', 'every day') still create something.
+    push({ type: 'create' })
 
     // Events and tasks, each day-grouped like MatchResults; the section
     // heading rides the group's first row, the day heading every row's group
@@ -432,7 +482,22 @@ function PaletteCard() {
               : { fn: interp.title },
           )
         } else {
-          openQuickAdd(createKind, draft)
+          // Fields mode: hand the parsed Interpretation over structurally so
+          // the dialog builds the entry without re-running the base grammar
+          // (which would drop the recurrence/location overlays and re-merge
+          // the title). Optional fields omitted when undefined.
+          openQuickAddFields({
+            summary: interp.title,
+            kind: createKind,
+            allDay: interp.allDay,
+            ...(interp.when !== undefined ? { start: interp.when } : {}),
+            ...(interp.durationMin !== undefined ? { durationMin: interp.durationMin } : {}),
+            ...(interp.due !== undefined ? { due: interp.due } : {}),
+            ...(interp.rrule !== undefined ? { rrule: interp.rrule } : {}),
+            ...(interp.location !== undefined ? { location: interp.location } : {}),
+            tags: interp.tags,
+            ...(interp.priority !== undefined ? { priority: interp.priority } : {}),
+          })
         }
         return
       }
@@ -466,9 +531,14 @@ function PaletteCard() {
     } else if (e.key === 'Enter') {
       e.preventDefault()
       runEntry(rows.find((r) => r.idx === sel))
-    } else if (e.key === 'Tab' && interp.title !== '' && trimmed !== '') {
+    } else if (e.key === 'Tab') {
+      // Always swallowed inside the input (empty query: keep focus); with a
+      // query, Tab cycles the create kind forward, Shift+Tab backward.
       e.preventDefault()
-      setKindOverride(CREATE_KINDS[(CREATE_KINDS.indexOf(createKind) + 1) % CREATE_KINDS.length])
+      if (trimmed !== '') {
+        const dir = e.shiftKey ? -1 : 1
+        setKindOverride(CREATE_KINDS[(CREATE_KINDS.indexOf(createKind) + dir + CREATE_KINDS.length) % CREATE_KINDS.length])
+      }
     }
     // Escape is handled by the document listener above.
   }
@@ -482,19 +552,23 @@ function PaletteCard() {
       onMouseDown={closeCommandPalette}
     >
       <div
-        class="flex max-h-[70vh] w-[640px] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-2xl"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Command palette"
+        class="wycal-palette-panel flex max-h-[70vh] w-[640px] max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-xl border border-border bg-surface"
         onMouseDown={(e) => e.stopPropagation()}
       >
         <input
           ref={inputRef}
           class="input w-full rounded-b-none border-0 border-b border-border px-4 py-3.5 text-lg"
           type="text"
+          dir="auto"
           value={draft}
           placeholder="Add event, task, or contact — or search…"
           aria-label="Command palette"
           autoComplete="off"
           spellcheck={false}
-          onInput={(e) => setDraft(e.currentTarget.value)}
+          onInput={(e) => setDraft(e.currentTarget.value.replace(/\r\n?|\n/g, ' '))}
           onKeyDown={onInputKeyDown}
         />
         <div class="flex min-h-0 flex-1">
@@ -507,6 +581,7 @@ function PaletteCard() {
                 createKind={createKind}
                 interp={interp}
                 chips={chipList}
+                tokens={hlTokens}
                 onSelect={() => setIdx(r.idx)}
                 onRun={() => runEntry(r)}
               />
@@ -522,7 +597,7 @@ function PaletteCard() {
         <div class="flex items-center gap-3 border-t border-border px-3 py-1.5 text-xs text-muted">
           <span>↑↓ move</span>
           <span>⏎ run</span>
-          {interp.title !== '' && trimmed !== '' && <span>⇥ cycle kind ({CREATE_LABEL[createKind]})</span>}
+          {trimmed !== '' && <span>⇥/⇧⇥ cycle kind ({CREATE_LABEL[createKind]})</span>}
           <span>esc close</span>
         </div>
       </div>
@@ -551,6 +626,7 @@ function ResultRow(props: {
   createKind: CreateKind
   interp: Interpretation
   chips: Chip[]
+  tokens: string[]
   onSelect: () => void
   onRun: () => void
 }) {
@@ -577,13 +653,13 @@ function ResultRow(props: {
         onMouseEnter={props.onSelect}
         onClick={props.onRun}
       >
-        <RowContent row={row} createKind={props.createKind} interp={props.interp} chips={props.chips} />
+        <RowContent row={row} createKind={props.createKind} interp={props.interp} chips={props.chips} tokens={props.tokens} />
       </button>
     </>
   )
 }
 
-function RowContent(props: { row: Row; createKind: CreateKind; interp: Interpretation; chips: Chip[] }) {
+function RowContent(props: { row: Row; createKind: CreateKind; interp: Interpretation; chips: Chip[]; tokens: string[] }) {
   const entry = props.row.entry
   switch (entry.type) {
     case 'create':
@@ -593,12 +669,17 @@ function RowContent(props: { row: Row; createKind: CreateKind; interp: Interpret
             <Icon.plus size={14} />
           </span>
           <span class="shrink-0 text-sm font-semibold text-accent">{CREATE_LABEL[props.createKind]}</span>
-          <span class="min-w-0 truncate text-base text-fg-strong">{props.interp.title}</span>
+          {props.interp.title !== '' ? (
+            <span class="min-w-0 truncate text-base text-fg-strong">{props.interp.title}</span>
+          ) : (
+            <span class="min-w-0 truncate text-base italic text-muted">untitled</span>
+          )}
           {props.chips.length > 0 && (
             <span class="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-1">
               {props.chips.map((c, i) => (
                 <span key={`${c.start}-${i}`} class={`shrink-0 rounded px-1.5 py-0.5 text-xs ${CHIP_CLASS[c.kind]}`}>
-                  {c.text.trim()}
+                  {/* Render-only: strip a leading 'at '/'for '/'@' (offsets untouched). */}
+                  {c.text.trim().replace(/^(?:at|for)\s+|^@/i, '')}
                 </span>
               ))}
             </span>
@@ -626,7 +707,7 @@ function RowContent(props: { row: Row; createKind: CreateKind; interp: Interpret
               ? fmtDate(entry.item.when)
               : `${fmtDate(entry.item.when)} ${fmtTime(entry.item.when, prefs.value.hour12)}`}
           </span>
-          <span class="min-w-0 truncate text-base text-fg-strong">{entry.item.ev.summary}</span>
+          <span class="min-w-0 truncate text-base text-fg-strong">{highlight(entry.item.ev.summary, props.tokens)}</span>
           {entry.item.calName !== '' && <span class="ml-auto truncate pl-2 text-sm text-muted">{entry.item.calName}</span>}
         </>
       )
@@ -640,7 +721,7 @@ function RowContent(props: { row: Row; createKind: CreateKind; interp: Interpret
             </span>
           )}
           <span class={`min-w-0 truncate text-base ${entry.item.done ? 'text-muted line-through' : 'text-fg-strong'}`}>
-            {entry.item.todo.summary}
+            {highlight(entry.item.todo.summary, props.tokens)}
           </span>
           <span class="ml-auto flex shrink-0 items-center gap-2">
             {entry.item.when !== null && <span class="text-xs tabular-nums text-muted">{fmtDate(entry.item.when)}</span>}
@@ -654,7 +735,7 @@ function RowContent(props: { row: Row; createKind: CreateKind; interp: Interpret
           <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent-soft text-xs font-semibold text-accent">
             {entry.fn.slice(0, 1).toUpperCase()}
           </span>
-          <span class="min-w-0 truncate text-base text-fg-strong">{entry.fn}</span>
+          <span class="min-w-0 truncate text-base text-fg-strong">{highlight(entry.fn, props.tokens)}</span>
           {entry.detail !== '' && <span class="ml-auto min-w-0 truncate pl-2 text-sm text-muted">{entry.detail}</span>}
         </>
       )
@@ -696,7 +777,9 @@ function PreviewCard(props: { entry: Entry; interp: Interpretation; createKind: 
   const p = props.interp
   const title =
     entry.type === 'create'
-      ? p.title
+      ? p.title !== ''
+        ? p.title
+        : 'untitled'
       : entry.type === 'event'
         ? entry.item.ev.summary
         : entry.type === 'todo'
@@ -712,7 +795,7 @@ function PreviewCard(props: { entry: Entry; interp: Interpretation; createKind: 
           <PreviewRows
             rows={[
               ...(p.due !== undefined ? ([['When', `${fmtWhen(p.due, p.allDay)}${p.allDay ? ' · all-day' : ''}`]] as [string, string][]) : []),
-              ...(p.durationMin !== undefined ? ([['Duration', fmtMinutes(p.durationMin)]] as [string, string][]) : []),
+              ...(p.durationMin !== undefined && !p.allDay ? ([['Duration', fmtMinutes(p.durationMin)]] as [string, string][]) : []),
               ...(p.rrule !== undefined ? ([['Repeats', describeRrule(p.rrule)]] as [string, string][]) : []),
               ...(p.location !== undefined ? ([['Where', p.location]] as [string, string][]) : []),
               ...(p.priority !== undefined ? ([['Priority', `#${prioLetter(p.priority)}`]] as [string, string][]) : []),
@@ -774,7 +857,10 @@ function PreviewCard(props: { entry: Entry; interp: Interpretation; createKind: 
       )}
       {entry.type === 'contact' && (
         <PreviewRows
-          rows={entry.detail !== '' ? ([['Contact', entry.detail]] as [string, string][]) : []}
+          rows={[
+            ...(entry.detail !== '' ? ([['Contact', entry.detail]] as [string, string][]) : []),
+            ...(entry.org !== undefined && entry.org !== '' ? ([['Org', entry.org]] as [string, string][]) : []),
+          ]}
         />
       )}
     </div>

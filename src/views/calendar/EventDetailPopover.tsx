@@ -228,7 +228,7 @@ export function EventDetailPopover(props: {
           </button>
           <button
             type="button"
-            class={`btn btn-sm ${del.armed ? 'btn-danger' : 'btn-ghost text-danger'}`}
+            class={`btn btn-sm ${del.armed ? 'btn-danger animate-pulse' : 'btn-ghost text-danger'}`}
             title={del.armed ? 'Click again to delete' : 'Delete event'}
             aria-label={del.armed ? 'Click again to delete' : 'Delete event'}
             disabled={deleting}
