@@ -20,9 +20,9 @@ import {
   isCalendarVisible,
   toggleCalendar,
   type VisibilityDomain,
-} from '../../stores/calendars';
-import { prefs, setPrefs } from '../../stores/prefs';
-import { allAgendaTags, agendaFilters, clearAgendaTags, setAgendaPriority, setAgendaStatus, toggleAgendaTag } from '../../stores/agendaFilters';
+} from '@wycal/core/stores/calendars';
+import { prefs, setPrefs } from '@wycal/core/stores/prefs';
+import { allAgendaTags, agendaFilters, clearAgendaTags, setAgendaPriority, setAgendaStatus, toggleAgendaTag } from '@wycal/core/stores/agendaFilters';
 import {
   applyAgendaView,
   applyView,
@@ -39,9 +39,9 @@ import {
   setViewKeybind,
 } from '../../stores/savedviews';
 import { isDialogOpen, isEditableTarget } from '../../stores/ui';
-import { push } from '../../stores/toasts';
-import { syncState } from '../../lib/sync/engine';
-import { addMinutes } from '../../lib/util/date';
+import { push } from '@wycal/core/stores/toasts';
+import { syncState } from '@wycal/core/lib/sync/engine';
+import { addMinutes } from '@wycal/core/lib/util/date';
 import { parseRoutePath, ROUTES, useHash } from '../../routes';
 import { Icon } from '../../ui/icons';
 import { useFocusTrap } from '../../ui/Modal';

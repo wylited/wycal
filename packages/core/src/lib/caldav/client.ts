@@ -91,8 +91,9 @@ export class CaldavClient {
     // The stored account.url stays untouched (display/identity); only the
     // REQUEST base normalizes: any host + '/dav' path → page origin + '/dav',
     // so localhost / 127.0.0.1 / lan-ip / hostname dev-server pages all work.
+    // Outside a browser (no `location`) the absolute account URL is used as-is.
     const path = origin.pathname.replace(/\/+$/, '')
-    const proxied = path === '/dav' || path.startsWith('/dav/')
+    const proxied = (path === '/dav' || path.startsWith('/dav/')) && typeof location !== 'undefined'
     this.baseUrl = proxied ? `${location.origin}/dav` : account.url.replace(/\/+$/, '')
     this.davPrefix = path
     this.authHeader = 'Basic ' + base64Utf8(`${account.username}:${account.password}`)

@@ -1,5 +1,6 @@
 /**
- * Account discovery + DAV localStorage plumbing for the sync engine.
+ * Account discovery + DAV KV plumbing (lib/kv seam, CONTRACTS §36) for the
+ * sync engine.
  *
  * Per account: cached `current-user-principal` + calendar/addressbook home
  * sets under `wycal.discovery.<accountId>`; a cached discovery is reused
@@ -9,17 +10,17 @@
  */
 import { CaldavClient } from '../caldav/client'
 import type { DavAccount, DavCollection } from '../caldav/types'
+import { kv } from '../kv'
 
 const DISCOVERY_PREFIX = 'wycal.discovery.'
 
 // ---------------------------------------------------------------------------
-// localStorage plumbing
+// KV plumbing (persistence only via lib/kv — CONTRACTS §36)
 // ---------------------------------------------------------------------------
 
 function readJson<T>(key: string): T | null {
-  if (typeof localStorage === 'undefined') return null
   try {
-    const raw = localStorage.getItem(key)
+    const raw = kv.get(key)
     return raw ? (JSON.parse(raw) as T) : null
   } catch (err) {
     console.warn(`wycal: could not read ${key}`, err)
@@ -28,18 +29,16 @@ function readJson<T>(key: string): T | null {
 }
 
 function writeJson(key: string, value: unknown): void {
-  if (typeof localStorage === 'undefined') return
   try {
-    localStorage.setItem(key, JSON.stringify(value))
+    kv.set(key, JSON.stringify(value))
   } catch (err) {
     console.warn(`wycal: could not persist ${key}`, err)
   }
 }
 
 export function removeLocal(key: string): void {
-  if (typeof localStorage === 'undefined') return
   try {
-    localStorage.removeItem(key)
+    kv.remove(key)
   } catch {
     /* ignore */
   }

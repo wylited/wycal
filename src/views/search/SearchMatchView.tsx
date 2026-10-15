@@ -11,13 +11,13 @@
  */
 import { useState } from 'preact/hooks'
 import type { ComponentChildren } from 'preact'
-import { addDays, dayKey, fmtDate, fmtTime } from '../../lib/util/date'
-import { icsDateToDate } from '../../lib/ics/types'
-import { prefs } from '../../stores/prefs'
-import { toggleDone } from '../../stores/todos'
-import type { TodoRecord } from '../../stores/todos'
-import { startOfToday } from './searchEngine'
-import type { EventItem, MatchItem, TodoItem } from './searchEngine'
+import { addDays, dayKey, fmtDate, fmtTime } from '@wycal/core/lib/util/date'
+import { icsDateToDate } from '@wycal/core/lib/ics/types'
+import { prefs } from '@wycal/core/stores/prefs'
+import { toggleDone } from '@wycal/core/stores/todos'
+import type { TodoRecord } from '@wycal/core/stores/todos'
+import { startOfToday } from '@wycal/core/search/searchEngine'
+import type { EventItem, MatchItem, TodoItem } from '@wycal/core/search/searchEngine'
 
 // ---------------------------------------------------------------------------
 // Row renderers (shared with SavedComposite; design.md §9.4 row anatomy)

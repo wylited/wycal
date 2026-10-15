@@ -6,7 +6,7 @@
  * from the `editor` signal. Esc/scrim/Cancel discard via `closeEditor()`.
  */
 import { signal } from '@preact/signals'
-import type { EventRecord } from '../../stores/events'
+import type { EventRecord } from '@wycal/core/stores/events'
 
 /** What the editor was opened for. */
 export type EditorRequest =

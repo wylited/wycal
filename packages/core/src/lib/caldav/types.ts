@@ -28,7 +28,7 @@ export interface DavAccount {
   username: string
   /** Secret resolvable in this tab ('' = none — see needsPassword). */
   password: string
-  /** Opt-in: persist the secret (plain text) in localStorage on this device. */
+  /** Opt-in: persist the secret (plain text) in the device KV. */
   rememberPassword: boolean
   /** Derived, never persisted: no usable secret in this tab → needs Unlock. */
   needsPassword: boolean

@@ -19,14 +19,14 @@
  */
 import { useEffect, useRef, useState } from 'preact/hooks'
 import { closeTodoEditor, todoEditor } from './todoEditor'
-import { deleteTodo, updateTodo } from '../../stores/todos'
-import type { TodoPatch } from '../../stores/todos'
-import { collections } from '../../stores/calendars'
+import { deleteTodo, updateTodo } from '@wycal/core/stores/todos'
+import type { TodoPatch } from '@wycal/core/stores/todos'
+import { collections } from '@wycal/core/stores/calendars'
 import { bumpDialogClose, bumpDialogOpen } from '../../stores/ui'
 import { Modal } from '../../ui/Modal'
 import { Segmented } from '../../ui/Segmented'
-import { icsDateToDate, localDateStr, localMidnightIso, prioLetter } from '../../lib/ics/types'
-import type { IcsTodo } from '../../lib/ics/types'
+import { icsDateToDate, localDateStr, localMidnightIso, prioLetter } from '@wycal/core/lib/ics/types'
+import type { IcsTodo } from '@wycal/core/lib/ics/types'
 
 /** #A/#B/#C quick bands — same values TodoDetailPopover's PRIO_VALUE writes. */
 const PRIO_VALUE = { A: 1, B: 4, C: 7 } as const

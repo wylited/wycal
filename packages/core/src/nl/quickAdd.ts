@@ -7,10 +7,8 @@
  * position, case-insensitive — strips them from the summary and returns the
  * parsed fields. Pure module: no imports beyond `Date`.
  *
- * Composition: TasksView runs this pass FIRST and feeds the stripped remainder
- * through the org-syntax parser (./tasksModel `parseQuickAdd`) so `:tags:` /
- * `d:YYYY-MM-DD` / `d:+1w` keep working; when both passes match the same field
- * the natural-language match wins. Token table (all case-insensitive):
+ * Composition: nl.ts runs this pass first and folds the stripped remainder
+ * into its own interpretation. Token table (all case-insensitive):
  *
  * | token                      | meaning                                        |
  * |----------------------------|------------------------------------------------|

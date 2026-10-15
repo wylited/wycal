@@ -16,11 +16,11 @@
 import { useCallback, useEffect, useRef } from 'preact/hooks'
 import type { CalendarApi, EventInput } from '@fullcalendar/core'
 import { effect } from '@preact/signals'
-import { occurrences, revision, type EventRecord } from '../../stores/events'
-import { collectionColor, collections, isCalendarVisible, visibilityVersion } from '../../stores/calendars'
-import { todos, revision as todoRevision, type TodoRecord } from '../../stores/todos'
-import { eventColorFor } from '../../lib/util/colors'
-import { icsDateToDate } from '../../lib/ics/types'
+import { occurrences, revision, type EventRecord } from '@wycal/core/stores/events'
+import { collectionColor, collections, isCalendarVisible, visibilityVersion } from '@wycal/core/stores/calendars'
+import { todos, revision as todoRevision, type TodoRecord } from '@wycal/core/stores/todos'
+import { eventColorFor } from '@wycal/core/lib/util/colors'
+import { icsDateToDate } from '@wycal/core/lib/ics/types'
 
 /** Args FullCalendar passes to a function event source. */
 interface FetchInfo {

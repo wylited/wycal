@@ -8,11 +8,11 @@
  * 'No free slots'. Footer copies a plain-text summary to the clipboard.
  * Shared Modal provides the dialog gate, Esc, backdrop and focus trap.
  */
-import { occurrences } from '../../stores/events';
-import { icsDateToDate } from '../../lib/ics/types';
-import { addDays } from '../../lib/util/date';
+import { occurrences } from '@wycal/core/stores/events';
+import { icsDateToDate } from '@wycal/core/lib/ics/types';
+import { addDays } from '@wycal/core/lib/util/date';
 import { Modal } from '../../ui/Modal';
-import { push } from '../../stores/toasts';
+import { push } from '@wycal/core/stores/toasts';
 
 const WORK_START_MIN = 9 * 60; // 09:00 local
 const WORK_END_MIN = 18 * 60; // 18:00 local

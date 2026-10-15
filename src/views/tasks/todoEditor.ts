@@ -6,7 +6,7 @@
  * Esc/scrim/Cancel discard via `closeTodoEditor()`.
  */
 import { signal } from '@preact/signals'
-import type { TodoRecord } from '../../stores/todos'
+import type { TodoRecord } from '@wycal/core/stores/todos'
 
 /** The record being edited, or null when the editor is closed. */
 export const todoEditor = signal<TodoRecord | null>(null)

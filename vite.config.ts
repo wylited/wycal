@@ -1,11 +1,15 @@
 import preact from '@preact/preset-vite';
 import tailwindcss from '@tailwindcss/vite';
+import { fileURLToPath } from 'node:url';
 import { defineConfig, type Plugin } from 'vite';
 
 /**
  * react -> preact/compat alias, applied with enforce: 'pre' and listed BEFORE the
  * preact preset so every react-flavored import (notably @fullcalendar/react)
  * resolves through preact/compat regardless of plugin order.
+ *
+ * The @wycal/core alias is FIRST so the shared core (packages/core) resolves
+ * from source in dev and build, bypassing node_modules resolution entirely.
  */
 function reactCompatAlias(): Plugin {
   return {
@@ -14,6 +18,10 @@ function reactCompatAlias(): Plugin {
     config: () => ({
       resolve: {
         alias: [
+          {
+            find: /^@wycal\/core/,
+            replacement: fileURLToPath(new URL('./packages/core/src', import.meta.url)),
+          },
           { find: /^react$/, replacement: 'preact/compat' },
           { find: /^react-dom$/, replacement: 'preact/compat' },
           { find: /^react-dom\/client$/, replacement: 'preact/compat' },

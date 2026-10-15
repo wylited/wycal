@@ -9,8 +9,8 @@
  * the `wycal:newcontact` window event ContactsView listens for.
  */
 import { useMemo } from 'preact/hooks'
-import { contacts, contactTagFilter, requestOpenContact } from '../../stores/contacts'
-import { syncState } from '../../lib/sync/engine'
+import { contacts, contactTagFilter, requestOpenContact } from '@wycal/core/stores/contacts'
+import { syncState } from '@wycal/core/lib/sync/engine'
 
 /** How far ahead the birthday list looks (days, inclusive of today). */
 const BIRTHDAY_WINDOW_DAYS = 30

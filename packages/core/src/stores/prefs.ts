@@ -1,5 +1,6 @@
-import { signal } from '@preact/signals';
+import { signal } from '@preact/signals-core';
 import type { AgendaGroup, AgendaRange } from '../lib/agenda/agendaModel';
+import { kv } from '../lib/kv';
 
 export type Theme = 'light' | 'dark' | 'auto';
 export type Density = 'compact' | 'cozy';
@@ -79,8 +80,8 @@ const DEFAULT_PREFS: Readonly<Prefs> = {
   sidebarSectionHeights: {},
 };
 
-/** Keeps only finite-number entries of a stored heights map (localStorage
- *  boundary — the shape is untrusted). */
+/** Keeps only finite-number entries of a stored heights map (KV
+ * boundary — the shape is untrusted). */
 function sanitizeSectionHeights(raw: object): Record<string, number> {
   const out: Record<string, number> = {};
   for (const [k, v] of Object.entries(raw)) {
@@ -90,9 +91,8 @@ function sanitizeSectionHeights(raw: object): Record<string, number> {
 }
 
 function loadPrefs(): Prefs {
-  if (typeof localStorage === 'undefined') return { ...DEFAULT_PREFS };
   try {
-    const raw = localStorage.getItem(PREFS_STORAGE_KEY);
+    const raw = kv.get(PREFS_STORAGE_KEY);
     if (!raw) return { ...DEFAULT_PREFS };
     const stored: unknown = JSON.parse(raw);
     const s = (stored ?? {}) as Partial<Record<keyof Prefs, unknown>>;
@@ -163,14 +163,14 @@ function loadPrefs(): Prefs {
   }
 }
 
-/** Global preferences signal, persisted to localStorage under 'wycal.prefs'. */
+/** Global preferences signal, persisted to the device KV under 'wycal.prefs'. */
 export const prefs = signal<Prefs>(loadPrefs());
 
 /** Merge a patch into prefs and persist. */
 export function setPrefs(patch: Partial<Prefs>): void {
   prefs.value = { ...prefs.value, ...patch };
   try {
-    localStorage.setItem(PREFS_STORAGE_KEY, JSON.stringify(prefs.value));
+    kv.set(PREFS_STORAGE_KEY, JSON.stringify(prefs.value));
   } catch (err) {
     console.warn('wycal: could not persist prefs', err);
   }

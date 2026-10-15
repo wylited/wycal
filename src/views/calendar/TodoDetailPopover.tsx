@@ -16,14 +16,14 @@ import {
   setTodoPriority,
   todoKey,
   todos,
-} from '../../stores/todos'
-import type { TodoRecord } from '../../stores/todos'
-import { collections } from '../../stores/calendars'
-import { prefs } from '../../stores/prefs'
-import { addDays, fmtDate, fmtTime } from '../../lib/util/date'
-import { icsDateToDate, prioLetter, shiftIcsDate, toIcsDateInput } from '../../lib/ics/types'
-import type { IcsDate, IcsTodo } from '../../lib/ics/types'
-import { eventColorFor } from '../../lib/util/colors'
+} from '@wycal/core/stores/todos'
+import type { TodoRecord } from '@wycal/core/stores/todos'
+import { collections } from '@wycal/core/stores/calendars'
+import { prefs } from '@wycal/core/stores/prefs'
+import { addDays, fmtDate, fmtTime } from '@wycal/core/lib/util/date'
+import { icsDateToDate, prioLetter, shiftIcsDate, toIcsDateInput } from '@wycal/core/lib/ics/types'
+import type { IcsDate, IcsTodo } from '@wycal/core/lib/ics/types'
+import { eventColorFor } from '@wycal/core/lib/util/colors'
 import { openTodoEditor } from '../tasks/todoEditor'
 import { bumpPopoverClose, bumpPopoverOpen } from '../../stores/ui'
 import { Icon } from '../../ui/icons'

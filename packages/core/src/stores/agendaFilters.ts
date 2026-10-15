@@ -8,7 +8,7 @@
  * of saved views), plus `allAgendaTags` derived from the todos store for the
  * chip row.
  */
-import { computed, signal } from '@preact/signals'
+import { computed, signal } from '@preact/signals-core'
 import { prefs, setPrefs } from './prefs'
 import type { AgendaPriorityFilter, AgendaStatusFilter } from './prefs'
 import { todos } from './todos'

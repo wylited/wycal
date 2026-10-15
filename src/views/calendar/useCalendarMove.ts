@@ -7,8 +7,8 @@
 import { useCallback } from 'preact/hooks'
 import type { EventDropArg } from '@fullcalendar/core'
 import type { EventResizeDoneArg } from '@fullcalendar/interaction'
-import { toIcsDateInput } from '../../lib/ics/types'
-import { updateEvent, type EditScope, type EventPatch, type EventRecord } from '../../stores/events'
+import { toIcsDateInput } from '@wycal/core/lib/ics/types'
+import { updateEvent, type EditScope, type EventPatch, type EventRecord } from '@wycal/core/stores/events'
 
 export function useCalendarMove(askScope: () => Promise<EditScope | null>): {
   onEventDrop: (info: EventDropArg) => void

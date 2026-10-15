@@ -7,8 +7,8 @@
  */
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { signal } from '@preact/signals';
-import { addAccount, removeAccount } from '../../stores/accounts';
-import { initSync, syncState } from '../../lib/sync/engine';
+import { addAccount, removeAccount } from '@wycal/core/stores/accounts';
+import { initSync, syncState } from '@wycal/core/lib/sync/engine';
 
 const DEFAULT_SERVER_URL = `${location.origin}/dav`;
 const ERROR_TEXT = 'Could not sign in — check server, username and password';

@@ -34,8 +34,8 @@
  * palette highlights every consumed fragment in place. Pure module: no
  * store imports.
  */
-import { parseQuickAddLine } from '../tasks/quickAdd'
-import type { ParsedChip } from '../tasks/quickAdd'
+import { parseQuickAddLine } from './quickAdd'
+import type { ParsedChip } from './quickAdd'
 
 /** What an interpreted line creates. */
 export type InterpKind = 'event' | 'todo' | 'contact'

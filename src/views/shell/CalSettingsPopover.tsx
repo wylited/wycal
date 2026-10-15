@@ -7,8 +7,8 @@
  * is resolved live from the store so optimistic color updates show up.
  */
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { collectionColor, collections, setCollectionColor } from '../../stores/calendars';
-import { getCalDefaults, setCalDefaults } from '../../stores/caldefaults';
+import { collectionColor, collections, setCollectionColor } from '@wycal/core/stores/calendars';
+import { getCalDefaults, setCalDefaults } from '@wycal/core/stores/caldefaults';
 import { bumpDialogClose, bumpDialogOpen } from '../../stores/ui';
 import { Icon } from '../../ui/icons';
 import { SwatchRow } from './NewCalendarModal';

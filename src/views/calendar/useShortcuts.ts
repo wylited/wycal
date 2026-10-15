@@ -13,7 +13,7 @@
 import { useEffect } from 'preact/hooks'
 import type { CalendarApi } from '@fullcalendar/core'
 import { isDialogOpen, isEditableTarget } from '../../stores/ui'
-import { runToastAction, toasts } from '../../stores/toasts'
+import { runToastAction, toasts } from '@wycal/core/stores/toasts'
 
 /** Views the shortcuts switch to (a subset of the toolbar's HashView). */
 type ShortcutView = 'day' | 'week' | '2weeks' | 'month' | 'agenda'

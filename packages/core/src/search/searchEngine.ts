@@ -17,15 +17,15 @@
  * Events are evaluated as occurrences over a wide window (30 days back →
  * 180 days ahead) via the store's memoized expansion; tasks are window-free.
  */
-import { addDays } from '../../lib/util/date'
-import { computed } from '@preact/signals'
-import { icsDateToDate, prioLetter } from '../../lib/ics/types'
-import type { IcsEvent, IcsTodo } from '../../lib/ics/types'
-import { collectionColor, collections, visibleCalendars } from '../../stores/calendars'
-import { occurrences } from '../../stores/events'
-import type { EventRecord } from '../../stores/events'
-import { todos } from '../../stores/todos'
-import type { TodoRecord } from '../../stores/todos'
+import { addDays } from '../lib/util/date'
+import { computed } from '@preact/signals-core'
+import { icsDateToDate, prioLetter } from '../lib/ics/types'
+import type { IcsEvent, IcsTodo } from '../lib/ics/types'
+import { collectionColor, collections, visibleCalendars } from '../stores/calendars'
+import { occurrences } from '../stores/events'
+import type { EventRecord } from '../stores/events'
+import { todos } from '../stores/todos'
+import type { TodoRecord } from '../stores/todos'
 
 // ---------------------------------------------------------------------------
 // Tokenizer

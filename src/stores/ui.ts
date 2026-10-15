@@ -6,9 +6,9 @@
  * and the "new event" trigger shared with the `N` key.
  */
 import { signal } from '@preact/signals'
-import { addMinutes } from '../lib/util/date'
+import { addMinutes } from '@wycal/core/lib/util/date'
 import { openEditor, editor } from '../views/event-editor/editorState'
-import { prefs } from './prefs'
+import { prefs } from '@wycal/core/stores/prefs'
 
 /**
  * Sidebar/drawer visibility (source of truth; Sidebar renders from this).

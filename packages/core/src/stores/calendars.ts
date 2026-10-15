@@ -13,8 +13,9 @@
  * original storage keys, so pre-split persisted sets seed it as-is, while the
  * agenda domain starts empty and therefore defaults to all-visible.
  */
-import { computed, signal, type Signal } from '@preact/signals'
+import { computed, signal, type Signal } from '@preact/signals-core'
 import type { DavCollection } from '../lib/caldav/types'
+import { kv } from '../lib/kv'
 import { clientForCollection, httpStatus, requestSync } from '../lib/sync/engine'
 import { EVENT_COLORS } from '../lib/util/colors'
 import { push } from './toasts'
@@ -30,9 +31,8 @@ const STORAGE_KEYS: Record<VisibilityDomain, { visible: string; hidden: string }
 }
 
 function loadSet(key: string): Set<string> {
-  if (typeof localStorage === 'undefined') return new Set()
   try {
-    const raw = localStorage.getItem(key)
+    const raw = kv.get(key)
     if (!raw) return new Set()
     const arr: unknown = JSON.parse(raw)
     return Array.isArray(arr) ? new Set(arr.filter((v): v is string => typeof v === 'string')) : new Set()
@@ -43,11 +43,10 @@ function loadSet(key: string): Set<string> {
 }
 
 function persist(domain: VisibilityDomain): void {
-  if (typeof localStorage === 'undefined') return
   const d = domains[domain]
   try {
-    localStorage.setItem(STORAGE_KEYS[domain].visible, JSON.stringify([...d.visible.value]))
-    localStorage.setItem(STORAGE_KEYS[domain].hidden, JSON.stringify([...d.hidden.value]))
+    kv.set(STORAGE_KEYS[domain].visible, JSON.stringify([...d.visible.value]))
+    kv.set(STORAGE_KEYS[domain].hidden, JSON.stringify([...d.hidden.value]))
   } catch (err) {
     console.warn('wycal: could not persist calendar visibility', err)
   }

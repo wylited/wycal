@@ -5,7 +5,7 @@
  * or null on cancel (the caller reverts the gesture).
  */
 import { Modal } from '../../ui/Modal'
-import type { EditScope } from '../../stores/events'
+import type { EditScope } from '@wycal/core/stores/events'
 
 export function ScopeModal(props: { open: boolean; onResolve: (scope: EditScope | null) => void }) {
   return (

@@ -13,8 +13,8 @@
 import { useEffect } from 'preact/hooks';
 import type { IconComponent } from '../../ui/icons';
 import { Icon } from '../../ui/icons';
-import { setPrefs, prefs } from '../../stores/prefs';
-import type { Theme } from '../../stores/prefs';
+import { setPrefs, prefs } from '@wycal/core/stores/prefs';
+import type { Theme } from '@wycal/core/stores/prefs';
 import { helpOpen } from '../../stores/ui';
 import { parseRoutePath, ROUTES, useHash } from '../../routes';
 

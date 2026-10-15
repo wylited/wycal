@@ -19,7 +19,7 @@
  * server hrefs to full URLs before any store apply, so record hrefs/keys and
  * `deletedHrefs` always match what the CRUD actions create.
  *
- * localStorage keys: `wycal.discovery.<accountId>` (see ./discovery). Sync
+ * KV keys: `wycal.discovery.<accountId>` (see ./discovery). Sync
  * tokens are memory-only (`appliedTokens` below): the stores are in-memory,
  * so a token persisted across reloads would report zero changes against an
  * empty store on boot; leftover `wycal.sync.*` keys from older builds are
@@ -31,7 +31,7 @@
  * materializer keeps one yearly VEVENT per contact BDAY in the Birthdays
  * calendar after every contact sync.
  */
-import { effect, signal } from '@preact/signals'
+import { effect, signal } from '@preact/signals-core'
 import type { CaldavClient } from '../caldav/client'
 import { DavError, isInvalidSyncTokenError } from '../caldav/types'
 import type { DavAccount, DavCollection, DavObject } from '../caldav/types'
@@ -40,6 +40,7 @@ import { serializeIcsEvent } from '../ics/serialize'
 import { parseVcf } from '../vcard/parse'
 import type { Vcard } from '../vcard/types'
 import type { IcsEvent, IcsTodo } from '../ics/types'
+import { kv, kvKeys } from '../kv'
 import { allDayIcsDate } from '../util/date'
 import { accounts } from '../../stores/accounts'
 import { collections, dropCollections, registerCollections } from '../../stores/calendars'
@@ -56,7 +57,6 @@ import {
   dropClient,
   fullDiscovery,
   listAccountCollections,
-  removeLocal,
   serverPathOf,
   type DiscoveryCache,
 } from './discovery'
@@ -365,10 +365,12 @@ export function requestSync(collectionUrl: string): void {
   clearTimeout(timers.get(key))
   timers.set(
     key,
-    window.setTimeout(() => {
+    // bun-types types setTimeout as Node's Timeout; the runtime contract here
+    // is the DOM number id (same coercion as scheduler.ts).
+    setTimeout(() => {
       timers.delete(key)
       void runDeltaSync(key)
-    }, DEBOUNCE_MS),
+    }, DEBOUNCE_MS) as unknown as number,
   )
 }
 
@@ -737,10 +739,8 @@ let initialized = false
  * by older builds have no reader — remove them once at boot.
  */
 function clearLegacySyncTokens(): void {
-  if (typeof localStorage === 'undefined') return
-  for (let i = localStorage.length - 1; i >= 0; i--) {
-    const key = localStorage.key(i)
-    if (key !== null && key.startsWith(TOKEN_PREFIX)) removeLocal(key)
+  for (const key of kvKeys()) {
+    if (key.startsWith(TOKEN_PREFIX)) kv.remove(key)
   }
 }
 

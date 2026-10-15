@@ -25,7 +25,7 @@
  */
 import type { JSX } from 'preact'
 import { useEffect, useRef, useState } from 'preact/hooks'
-import { addDays, dayKey, fmtTime } from '../../lib/util/date'
+import { addDays, dayKey, fmtTime } from '@wycal/core/lib/util/date'
 import {
   agendaDayLabel,
   collectAgendaItems,
@@ -34,12 +34,12 @@ import {
   orderedCalendars,
   type AgendaGroup,
   type AgendaItem,
-} from '../../lib/agenda/agendaModel'
-import { occurrences, revision as eventRevision, type EventRecord } from '../../stores/events'
-import { collectionColor, collections, isCalendarVisible, visibilityVersion } from '../../stores/calendars'
-import { isTodoDone, revision as todoRevision, todos, toggleDone, type TodoRecord } from '../../stores/todos'
-import { prefs, setPrefs } from '../../stores/prefs'
-import { agendaFilters } from '../../stores/agendaFilters' // sidebar filter chips (N1): status/priority computed, tags signal
+} from '@wycal/core/lib/agenda/agendaModel'
+import { occurrences, revision as eventRevision, type EventRecord } from '@wycal/core/stores/events'
+import { collectionColor, collections, isCalendarVisible, visibilityVersion } from '@wycal/core/stores/calendars'
+import { isTodoDone, revision as todoRevision, todos, toggleDone, type TodoRecord } from '@wycal/core/stores/todos'
+import { prefs, setPrefs } from '@wycal/core/stores/prefs'
+import { agendaFilters } from '@wycal/core/stores/agendaFilters' // sidebar filter chips (N1): status/priority computed, tags signal
 import { Icon } from '../../ui/icons'
 
 // --- Palette → detail-popover anchor registry (detailRequest.ts contract) ---

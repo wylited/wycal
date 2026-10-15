@@ -6,8 +6,8 @@
  * exists but its sync errored (no collections ever arrived) it shows the
  * engine's message with Retry / Open Settings instead.
  */
-import { accounts } from '../../stores/accounts'
-import { requestSyncAll } from '../../lib/sync/engine'
+import { accounts } from '@wycal/core/stores/accounts'
+import { requestSyncAll } from '@wycal/core/lib/sync/engine'
 import { Icon } from '../../ui/icons'
 import { ROUTES } from '../../routes'
 

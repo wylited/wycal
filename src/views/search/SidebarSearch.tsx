@@ -17,13 +17,13 @@
  * (Keyboard search entry lives in the command palette: '/' + ⌘K.)
  */
 import { useEffect, useRef, useState } from 'preact/hooks'
-import type { Vcard } from '../../lib/vcard/types'
-import { dayKey } from '../../lib/util/date'
+import type { Vcard } from '@wycal/core/lib/vcard/types'
+import { dayKey } from '@wycal/core/lib/util/date'
 import { gotoCalendarQuery } from '../../routes'
-import { contacts, requestOpenContact } from '../../stores/contacts'
+import { contacts, requestOpenContact } from '@wycal/core/stores/contacts'
 import { Icon } from '../../ui/icons'
-import { filterMatchItems, matchUniverse, tokenToText, tokenizeQuery } from './searchEngine'
-import type { MatchItem } from './searchEngine'
+import { filterMatchItems, matchUniverse, tokenToText, tokenizeQuery } from '@wycal/core/search/searchEngine'
+import type { MatchItem } from '@wycal/core/search/searchEngine'
 import { DetailField, MatchResults, RowDetail, snippet } from './SearchMatchView'
 
 /** One sidebar contact hit: record href + display strings + the record data

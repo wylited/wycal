@@ -3,7 +3,7 @@
  * expiry timestamps; the UI host (`ui/Toast.tsx`) renders and auto-dismisses.
  * design.md §5: bottom-right stack, 3.5s auto-dismiss.
  */
-import { signal } from '@preact/signals'
+import { signal } from '@preact/signals-core'
 
 type ToastKind = 'info' | 'success' | 'error'
 

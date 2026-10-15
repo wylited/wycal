@@ -13,20 +13,20 @@
  * Mounted at `#/view/:id` (route props) and also accepts the calendar
  * route's `?saved=<id>` hash query.
  */
-import { addDays, dayKey, fmtDate } from '../../lib/util/date'
-import { icsDateToDate } from '../../lib/ics/types'
-import { collectionColor, collections, visibleCalendars } from '../../stores/calendars'
-import { occurrences } from '../../stores/events'
-import type { EventRecord } from '../../stores/events'
-import { prefs } from '../../stores/prefs'
+import { addDays, dayKey, fmtDate } from '@wycal/core/lib/util/date'
+import { icsDateToDate } from '@wycal/core/lib/ics/types'
+import { collectionColor, collections, visibleCalendars } from '@wycal/core/stores/calendars'
+import { occurrences } from '@wycal/core/stores/events'
+import type { EventRecord } from '@wycal/core/stores/events'
+import { prefs } from '@wycal/core/stores/prefs'
 import { parseRoutePath, useHash } from '../../routes'
 import { savedViews } from '../../stores/savedviews'
 import type { SavedView } from '../../stores/savedviews'
-import { stuckTopLevel, todos as todosSignal } from '../../stores/todos'
-import type { TodoRecord } from '../../stores/todos'
+import { stuckTopLevel, todos as todosSignal } from '@wycal/core/stores/todos'
+import type { TodoRecord } from '@wycal/core/stores/todos'
 import { DayHeading, EventRow, MatchResults, SectionHeader, TodoRow } from './SearchMatchView'
-import { collectMatchItems, collectTodoItems, filterMatchItems, startOfToday, tokenizeQuery } from './searchEngine'
-import type { TodoItem } from './searchEngine'
+import { collectMatchItems, collectTodoItems, filterMatchItems, startOfToday, tokenizeQuery } from '@wycal/core/search/searchEngine'
+import type { TodoItem } from '@wycal/core/search/searchEngine'
 
 type SavedSection = SavedView['sections'][number]
 

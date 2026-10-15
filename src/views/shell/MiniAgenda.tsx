@@ -7,13 +7,13 @@
  * MiniMonth). §5 skeletons while the first sync runs; empty → "Nothing
  * coming up". The ~200px body scrolls with the global themed scrollbar.
  */
-import type { IcsDate } from '../../lib/ics/types';
-import { icsDateToDate } from '../../lib/ics/types';
-import { syncState } from '../../lib/sync/engine';
-import { addDays, dayKey, fmtTime } from '../../lib/util/date';
-import { occurrences, revision as eventRevision } from '../../stores/events';
-import { prefs } from '../../stores/prefs';
-import { isTodoDone, revision as todoRevision, todos } from '../../stores/todos';
+import type { IcsDate } from '@wycal/core/lib/ics/types';
+import { icsDateToDate } from '@wycal/core/lib/ics/types';
+import { syncState } from '@wycal/core/lib/sync/engine';
+import { addDays, dayKey, fmtTime } from '@wycal/core/lib/util/date';
+import { occurrences, revision as eventRevision } from '@wycal/core/stores/events';
+import { prefs } from '@wycal/core/stores/prefs';
+import { isTodoDone, revision as todoRevision, todos } from '@wycal/core/stores/todos';
 import { gotoCalendarQuery } from '../../routes';
 
 interface MiniRow {

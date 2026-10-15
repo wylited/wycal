@@ -4,7 +4,7 @@
  * rollback + toast on failure, etag refresh on success, and a debounced
  * `requestSync` of the owning addressbook after every mutation.
  */
-import { signal } from '@preact/signals'
+import { signal } from '@preact/signals-core'
 import type { CaldavClient } from '../lib/caldav/client'
 import type { Vcard } from '../lib/vcard/types'
 import { serializeVcard } from '../lib/vcard/serialize'

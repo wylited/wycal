@@ -8,13 +8,13 @@
 import { useEffect, useState } from 'preact/hooks';
 import { Modal } from '../../ui/Modal';
 import { bumpDialogClose, bumpDialogOpen } from '../../stores/ui';
-import { PALETTE } from '../../lib/util/colors';
-import { accounts } from '../../stores/accounts';
-import { collections } from '../../stores/calendars';
-import { push } from '../../stores/toasts';
-import type { DavAccount } from '../../lib/caldav/types';
-import { clientForAccount } from '../../lib/sync/discovery';
-import { relistAccount } from '../../lib/sync/engine';
+import { PALETTE } from '@wycal/core/lib/util/colors';
+import { accounts } from '@wycal/core/stores/accounts';
+import { collections } from '@wycal/core/stores/calendars';
+import { push } from '@wycal/core/stores/toasts';
+import type { DavAccount } from '@wycal/core/lib/caldav/types';
+import { clientForAccount } from '@wycal/core/lib/sync/discovery';
+import { relistAccount } from '@wycal/core/lib/sync/engine';
 
 /**
  * The §9.3 swatch row, shared with CalSettingsPopover. Chips read

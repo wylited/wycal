@@ -12,7 +12,22 @@ Bun + Vite + Preact + TypeScript SPA, no backend of our own; talks CalDAV/CardDA
 
 ## 2. Module tree (exact)
 
+Wave 17 split the tree: framework-agnostic core lives in `packages/core` (§37), the web SPA stays at `src/`. Sections below that cite `src/lib/...`, `src/stores/<core store>`, `views/*/quickAdd|nl|searchEngine` read those paths as `packages/core/src/...`.
+
 ```
+packages/core/src/          @wycal/core — shared, DOM-free (§37)
+  index.ts                  barrel (kv + lib + stores + nl + search)
+  lib/ics/                  types.ts parse.ts serialize.ts tz.ts recurrence.ts expand.ts (+ ics.test.ts)
+  lib/caldav/               client.ts types.ts xml.ts (+ xml.test.ts)
+  lib/vcard/                types.ts parse.ts serialize.ts text.ts (+ vcard.test.ts)
+  lib/sync/                 engine.ts scheduler.ts discovery.ts
+  lib/util/                 date.ts id.ts colors.ts (PALETTE, eventColorFor, hexToRgba)
+  lib/agenda/               agendaModel.ts
+  lib/kv.ts                 persistence seam (§37)
+  stores/                   accounts calendars events todos contacts prefs caldefaults agendaFilters toasts
+  nl/                       quickAdd.ts nl.ts (+ quickAdd.test.ts nl.test.ts)
+  search/                   searchEngine.ts
+
 src/
   main.tsx               mount + router + theme sync
   app.tsx                shell layout (header/sidebar/drawer/<router outlets>) + global keybinds
@@ -20,23 +35,24 @@ src/
   styles/theme.css       Ayu tokens (design.md §1–3) + FullCalendar --fc-* mapping + base layer
   styles/app.css         tailwind entry (@import "tailwindcss") + component classes (.btn, .input, .chip, .card, .todo-row, …)
   ui/                    shared primitives: icons.tsx, Modal.tsx (Modal + useFocusTrap), Toasts.tsx (host), Segmented.tsx, HelpOverlay.tsx
-  lib/
-    ics/                 types.ts parse.ts serialize.ts tz.ts recurrence.ts expand.ts (+ ics.test.ts)
-    caldav/              client.ts types.ts xml.ts (+ xml.test.ts)
-    vcard/               types.ts parse.ts serialize.ts text.ts (+ vcard.test.ts)
-    sync/                engine.ts scheduler.ts discovery.ts
-    util/                date.ts id.ts colors.ts (PALETTE, eventColorFor, hexToRgba)
-  stores/                prefs.ts accounts.ts calendars.ts caldefaults.ts events.ts todos.ts contacts.ts savedviews.ts toasts.ts ui.ts
+  stores/                web-only: savedviews.ts notes.ts ui.ts
   views/
+    auth/                SignIn.tsx
     calendar/            CalendarView.tsx (FullCalendar host + toolbar + hash state), CalendarEmptyState.tsx,
                          PeriodPickers.tsx (§9.2 month/year dropdowns), ScopeModal.tsx (recurring-edit scope),
-                         useCalendarEvents.ts (store→FullCalendar feed), useCalendarMove.ts (drag/resize), useShortcuts.ts
+                         AgendaList.tsx (§30), EventDetailPopover.tsx, TodoDetailPopover.tsx, ShareAvailability.tsx,
+                         detailRequest.ts, useCalendarEvents.ts (store→FullCalendar feed),
+                         useCalendarMove.ts (drag/resize), useShortcuts.ts
+    command/             CommandPalette.tsx
     event-editor/        EventEditor.tsx editorState.ts
-    contacts/            ContactsView.tsx ContactEditor.tsx ContactRows.tsx
-    search/              SearchMatchView.tsx searchEngine.ts SavedComposite.tsx
+    contacts/            ContactsView.tsx ContactEditor.tsx ContactRows.tsx ContactDetailPopover.tsx
+                         ContactsSidebar.tsx prefill.ts
+    notes/               ScratchNotes.tsx
+    quickadd/            QuickAddDialog.tsx
+    search/              SearchMatchView.tsx SavedComposite.tsx SidebarSearch.tsx
     settings/            SettingsView.tsx
-    shell/               Header.tsx Sidebar.tsx MiniMonth.tsx CalSettingsPopover.tsx NewCalendarModal.tsx
-    tasks/               TasksView.tsx tasksModel.ts
+    shell/               Header.tsx Sidebar.tsx MiniMonth.tsx MiniAgenda.tsx CalSettingsPopover.tsx NewCalendarModal.tsx
+    tasks/               TodoEditorModal.tsx todoEditor.ts
 ```
 
 ## 3. Data-layer API (frozen)
@@ -312,3 +328,11 @@ Documented deviations (implementation law, see useShortcuts.ts): `.` is Today an
 - PALETTE UX: create-row title min-w-0 flex-1 truncate with chip column shrink-0 max-w-[60%] (chips truncate inside — no more painting over the title, was 60-73px overlap); "No matches — Enter creates from your text" when only the create row remains; pane role=listbox + rows role=option aria-selected + input aria-activedescendant; locked hint row ("Locked — unlock in Settings…") when any account needsPassword; preview cards show event Notes (description) and contact Email/Phone/Note (invisible-metadata matches are now explainable); contact row detail lines token-highlighted.
 - AA: --muted light #8a9199→#6a737d (4.61:1 on #fafafa), dark #6c7380→#99a2ae (6.94:1 on #131721); all three token blocks.
 - QUICK-ADD RESILIENCE: inline `role=alert` create-failure line ("Create failed — check your password in Settings, then retry.") set in all four failure paths (both no-visible-calendar branches + both catches), cleared on retry/input; cross-day preview shows the end weekday ("3:00pm – Thu 1:00pm") in BOTH describeEntry and describeFields.
+
+## §37 Core extraction: packages/core (wave 17)
+
+- SPLIT: bun workspace root (`"workspaces": ["packages/*"]`); `@wycal/core` = `packages/core/src` (lib/ics·caldav·vcard·sync·util·agenda, lib/kv.ts, stores accounts·calendars·events·todos·contacts·prefs·caldefaults·agendaFilters·toasts, nl/ quickAdd+nl, search/searchEngine, index.ts barrel). The web SPA stays at `src/` and imports core by subpath — `@wycal/core/lib/ics/parse`, `@wycal/core/stores/events`, `@wycal/core/nl/quickAdd`, `@wycal/core/search/searchEngine` — NEVER relatively across the package boundary. Web-only: savedviews/notes/ui stores, editorState/todoEditor/prefill/detailRequest signals, all .tsx views, styles, routes.
+- CORE LAW: packages/core contains NO DOM/browser API use. `location` reads only behind `typeof location !== 'undefined'` (client.ts proxy law — web same-origin `/dav` rewrite only in a browser; absolute account URLs direct); scheduler's visibilitychange listener already guarded; timers are bare `setTimeout`/`setInterval`. Signals import from `@preact/signals-core` (core must NOT depend on `@preact/signals` or preact). toasts moved WITH core (four core stores push through it; the web host `ui/Toasts.tsx` renders it).
+- PERSISTENCE ONLY VIA THE KV SEAM (lib/kv.ts): `interface KvBackend { get/set/remove }`, `setKvBackend(persistent, session?)` swaps the live `kv`/`kvSession` proxies (defaults: web localStorage/sessionStorage; in-memory Map elsewhere). No file under packages/core touches a storage global; keys are unchanged (`wycal.accounts`, `wycal.secrets`, `wycal.secrets.remembered`, `wycal.prefs`, `wycal.caldefaults`, `wycal.visible/hidden`, `wycal.agenda.visible/hidden`, `wycal.discovery.<id>`). `kvKeys()` enumerates when the backend can (legacy `wycal.sync.*` sweep keeps its boot semantics); backends without enumeration sweep nothing.
+- RESOLUTION: tsconfig `paths` `@wycal/core` → `./packages/core/src/index.ts`, `@wycal/core/*` → `./packages/core/src/*` (+ include `packages/core/src`); vite alias `{ find: /^@wycal\/core/, replacement: <abs>/packages/core/src }` FIRST in the alias list — core ships as source, no build step. `tsc -b` stays a single root project (no composite refs). Barrel re-exports the public surface; the two cross-module name clashes are resolved there (`events.revision` keeps the bare name, todos' is `todoRevision`; `icsDateToDate` belongs to lib/ics/types, util/date is re-exported without it).
+

@@ -19,7 +19,7 @@
  *              with COUNT adjusted when the original rule was counted;
  *              overrides at/after the cut move to the new series.
  */
-import { signal } from '@preact/signals'
+import { signal } from '@preact/signals-core'
 import type { CaldavClient } from '../lib/caldav/client'
 import type { IcsDate, IcsEvent, IcsTodo } from '../lib/ics/types'
 import { pad2, shiftIcsDate } from '../lib/ics/types'

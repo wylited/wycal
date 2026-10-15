@@ -10,11 +10,11 @@
  * undo capture, so there is no undo toast (unlike events/todos).
  */
 import { useEffect, useRef, useState } from 'preact/hooks'
-import { deleteContact } from '../../stores/contacts'
-import type { ContactRecord } from '../../stores/contacts'
+import { deleteContact } from '@wycal/core/stores/contacts'
+import type { ContactRecord } from '@wycal/core/stores/contacts'
 import { bumpDialogClose, bumpDialogOpen } from '../../stores/ui'
-import { PALETTE, hexToRgba } from '../../lib/util/colors'
-import type { Vcard } from '../../lib/vcard/types'
+import { PALETTE, hexToRgba } from '@wycal/core/lib/util/colors'
+import type { Vcard } from '@wycal/core/lib/vcard/types'
 import { Icon } from '../../ui/icons'
 
 const WIDTH = 340

@@ -20,8 +20,8 @@ import {
 import {
   contacts,
   requestOpenContact,
-} from '../../stores/contacts';
-import type { ContactRecord } from '../../stores/contacts';
+} from '@wycal/core/stores/contacts';
+import type { ContactRecord } from '@wycal/core/stores/contacts';
 import { ROUTES } from '../../routes';
 
 /** How long the 'Saved' indicator pulses after a persist (ms). */

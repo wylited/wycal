@@ -4,10 +4,10 @@
  * the `#/calendar?saved=<id>` route renders them (CONTRACTS §15).
  */
 import { signal } from '@preact/signals'
-import { dayKey } from '../lib/util/date'
-import { applyVisibility, collections, isCalendarVisible } from './calendars'
-import { newUid } from '../lib/util/id'
-import { prefs, setPrefs } from './prefs'
+import { dayKey } from '@wycal/core/lib/util/date'
+import { applyVisibility, collections, isCalendarVisible } from '@wycal/core/stores/calendars'
+import { newUid } from '@wycal/core/lib/util/id'
+import { prefs, setPrefs } from '@wycal/core/stores/prefs'
 
 export type SavedSection =
   | { type: 'agenda'; days: number; calendars?: string[] }

@@ -8,8 +8,8 @@
 import { useEffect } from 'preact/hooks';
 import { Router, Route } from 'preact-router';
 import type { CustomHistory } from 'preact-router';
-import { prefs } from './stores/prefs';
-import { collections, toggleCalendar } from './stores/calendars';
+import { prefs } from '@wycal/core/stores/prefs';
+import { collections, toggleCalendar } from '@wycal/core/stores/calendars';
 import {
   helpOpen,
   isDialogOpen,
@@ -22,7 +22,7 @@ import {
   toggleSidebar,
 } from './stores/ui';
 import { notesOpen } from './stores/notes';
-import { accounts } from './stores/accounts';
+import { accounts } from '@wycal/core/stores/accounts';
 import { ROUTES, parseRoutePath, useHash } from './routes';
 import { SignIn, signInActive } from './views/auth/SignIn';
 import { CalendarView } from './views/calendar/CalendarView';
@@ -43,8 +43,8 @@ import { Header } from './views/shell/Header';
 import { Sidebar } from './views/shell/Sidebar';
 import { ToastHost } from './ui/Toasts';
 import { HelpOverlay } from './ui/HelpOverlay';
-import { initSync } from './lib/sync/engine';
-import { startSync } from './lib/sync/scheduler';
+import { initSync } from '@wycal/core/lib/sync/engine';
+import { startSync } from '@wycal/core/lib/sync/scheduler';
 
 interface HashLocation {
   pathname: string;

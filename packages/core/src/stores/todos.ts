@@ -9,7 +9,7 @@
  * VTODOs are flat here (no occurrence expansion): TasksView (§15) renders the
  * stored records; hierarchy is the `relatedTo` parent link via `childrenOf`.
  */
-import { signal } from '@preact/signals'
+import { signal } from '@preact/signals-core'
 import type { CaldavClient } from '../lib/caldav/client'
 import type { IcsDate, IcsTodo } from '../lib/ics/types'
 import { icsDateToDate } from '../lib/ics/types'

@@ -18,13 +18,13 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import type { JSX } from 'preact'
 import { format } from 'date-fns'
 import { signal } from '@preact/signals'
-import type { IcsDate, IcsEvent, IcsTodo } from '../../lib/ics/types'
-import { floatingWallIso, prioLetter, toIcsDateInput } from '../../lib/ics/types'
-import { newUid } from '../../lib/util/id'
-import { collections, isCalendarVisible } from '../../stores/calendars'
-import { createEvent, deleteEvent } from '../../stores/events'
-import { createTodo, deleteTodo } from '../../stores/todos'
-import { push } from '../../stores/toasts'
+import type { IcsDate, IcsEvent, IcsTodo } from '@wycal/core/lib/ics/types'
+import { floatingWallIso, prioLetter, toIcsDateInput } from '@wycal/core/lib/ics/types'
+import { newUid } from '@wycal/core/lib/util/id'
+import { collections, isCalendarVisible } from '@wycal/core/stores/calendars'
+import { createEvent, deleteEvent } from '@wycal/core/stores/events'
+import { createTodo, deleteTodo } from '@wycal/core/stores/todos'
+import { push } from '@wycal/core/stores/toasts'
 import { bumpDialogClose, bumpDialogOpen } from '../../stores/ui'
 import { Modal } from '../../ui/Modal'
 import {
@@ -33,7 +33,7 @@ import {
   type ParsedQuickAddLine,
   type QuickAddDue,
   type QuickAddKind,
-} from '../tasks/quickAdd'
+} from '@wycal/core/nl/quickAdd'
 
 /** Dialog entry mode: 'auto' trusts the line's own kind inference. */
 export type QuickAddMode = 'auto' | 'event' | 'todo'

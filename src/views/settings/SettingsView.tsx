@@ -1,12 +1,12 @@
 /** @jsxImportSource preact */
 import { useState } from 'preact/hooks';
 import type { ComponentChildren } from 'preact';
-import { prefs, setPrefs } from '../../stores/prefs';
-import type { Density, FirstDay, SidebarSide, Theme } from '../../stores/prefs';
-import { accounts, addAccount, removeAccount, setAccountPassword, setRememberPassword } from '../../stores/accounts';
-import type { DavAccount } from '../../lib/caldav/types';
-import { initSync, resumeAccount, syncState } from '../../lib/sync/engine';
-import { push } from '../../stores/toasts';
+import { prefs, setPrefs } from '@wycal/core/stores/prefs';
+import type { Density, FirstDay, SidebarSide, Theme } from '@wycal/core/stores/prefs';
+import { accounts, addAccount, removeAccount, setAccountPassword, setRememberPassword } from '@wycal/core/stores/accounts';
+import type { DavAccount } from '@wycal/core/lib/caldav/types';
+import { initSync, resumeAccount, syncState } from '@wycal/core/lib/sync/engine';
+import { push } from '@wycal/core/stores/toasts';
 import { Icon } from '../../ui/icons';
 import { Segmented } from '../../ui/Segmented';
 

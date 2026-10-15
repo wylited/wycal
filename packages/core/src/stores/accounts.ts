@@ -1,12 +1,13 @@
 /**
- * Account store (CONTRACTS §4): identity persists to localStorage under
- * `wycal.accounts` — id/url/username/rememberPassword, NEVER a password.
- * Secrets live in memory + the tab's sessionStorage `wycal.secrets`; they
- * reach localStorage `wycal.secrets.remembered` (plain text) only for
+ * Account store (CONTRACTS §4): identity persists to the device KV (lib/kv
+ * seam) under `wycal.accounts` — id/url/username/rememberPassword, NEVER a
+ * password. Secrets live in memory + the session KV `wycal.secrets`; they
+ * reach the device KV `wycal.secrets.remembered` (plain text) only for
  * accounts where the user explicitly enabled Remember (default OFF).
  */
-import { signal } from '@preact/signals'
+import { signal } from '@preact/signals-core'
 import type { DavAccount } from '../lib/caldav/types'
+import { kv, kvSession } from '../lib/kv'
 import { randomUuid } from '../lib/util/id'
 
 const ACCOUNTS_STORAGE_KEY = 'wycal.accounts'
@@ -30,23 +31,21 @@ function isStoredAccount(v: unknown): v is StoredAccount {
 }
 
 function persistStored(rows: StoredAccount[]): void {
-  if (typeof localStorage === 'undefined') return
   try {
-    localStorage.setItem(ACCOUNTS_STORAGE_KEY, JSON.stringify(rows))
+    kv.set(ACCOUNTS_STORAGE_KEY, JSON.stringify(rows))
   } catch (err) {
     console.warn('wycal: could not persist accounts', err)
   }
 }
 
 function loadStored(): StoredAccount[] {
-  if (typeof localStorage === 'undefined') return []
   try {
-    const raw = localStorage.getItem(ACCOUNTS_STORAGE_KEY)
+    const raw = kv.get(ACCOUNTS_STORAGE_KEY)
     if (!raw) return []
     const stored: unknown = JSON.parse(raw)
     if (!Array.isArray(stored)) return []
     // Legacy rows carried a plaintext `password` — accept them but drop the
-    // secret, and rewrite once to purge it from localStorage.
+    // secret, and rewrite once to purge it from the device KV.
     const hadPlaintext = stored.some(
       (v) => typeof v === 'object' && v !== null && 'password' in v,
     )
@@ -65,16 +64,9 @@ function loadStored(): StoredAccount[] {
 }
 
 function readSecrets(session: boolean, key: string): SecretMap {
-  const store = session
-    ? typeof sessionStorage === 'undefined'
-      ? null
-      : sessionStorage
-    : typeof localStorage === 'undefined'
-      ? null
-      : localStorage
-  if (!store) return {}
+  const store = session ? kvSession : kv
   try {
-    const raw = store.getItem(key)
+    const raw = store.get(key)
     if (!raw) return {}
     const parsed: unknown = JSON.parse(raw)
     if (typeof parsed !== 'object' || parsed === null) return {}
@@ -90,22 +82,15 @@ function readSecrets(session: boolean, key: string): SecretMap {
 }
 
 function writeSecrets(session: boolean, key: string, secrets: SecretMap): void {
-  const store = session
-    ? typeof sessionStorage === 'undefined'
-      ? null
-      : sessionStorage
-    : typeof localStorage === 'undefined'
-      ? null
-      : localStorage
-  if (!store) return
+  const store = session ? kvSession : kv
   try {
-    store.setItem(key, JSON.stringify(secrets))
+    store.set(key, JSON.stringify(secrets))
   } catch (err) {
     console.warn('wycal: could not persist secrets', err)
   }
 }
 
-/** Tab secrets (sessionStorage) and device secrets (Remember opt-in). */
+/** Tab secrets (session KV) and device secrets (Remember opt-in). */
 let sessionSecrets = readSecrets(true, SECRETS_SESSION_KEY)
 let rememberedSecrets = readSecrets(false, SECRETS_REMEMBERED_KEY)
 

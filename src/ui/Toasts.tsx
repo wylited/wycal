@@ -6,7 +6,7 @@
  * stores/toasts.ts.
  */
 import { useEffect } from 'preact/hooks';
-import { dismissToast, runToastAction, toasts } from '../stores/toasts';
+import { dismissToast, runToastAction, toasts } from '@wycal/core/stores/toasts';
 import { Icon } from './icons';
 
 const DOT_CLASS: Record<string, string> = {

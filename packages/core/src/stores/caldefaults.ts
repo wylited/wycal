@@ -1,10 +1,11 @@
 /**
  * Per-calendar default event settings (CONTRACTS §12): repeat preset,
  * duration, reminder and event color keyed by collection URL, persisted to
- * localStorage 'wycal.caldefaults'. Pure UI preferences — no DAV traffic;
+ * the device KV (lib/kv seam) as 'wycal.caldefaults'. Pure UI preferences — no DAV traffic;
  * the editor (§17) and sidebar popover (§18) read/write these.
  */
-import { signal } from '@preact/signals'
+import { signal } from '@preact/signals-core'
+import { kv } from '../lib/kv'
 
 interface CalDefaults {
   /** RRULE preset id (the editor repeat select), e.g. 'weekly'. */
@@ -33,9 +34,8 @@ function isCalDefaults(v: unknown): v is CalDefaults {
 }
 
 function loadCalDefaults(): Record<string, CalDefaults> {
-  if (typeof localStorage === 'undefined') return {}
   try {
-    const raw = localStorage.getItem(CALDEFAULTS_STORAGE_KEY)
+    const raw = kv.get(CALDEFAULTS_STORAGE_KEY)
     if (!raw) return {}
     const parsed: unknown = JSON.parse(raw)
     if (typeof parsed !== 'object' || parsed === null) return {}
@@ -55,7 +55,7 @@ const calDefaults = signal<Record<string, CalDefaults>>(loadCalDefaults())
 
 function persist(): void {
   try {
-    localStorage.setItem(CALDEFAULTS_STORAGE_KEY, JSON.stringify(calDefaults.value))
+    kv.set(CALDEFAULTS_STORAGE_KEY, JSON.stringify(calDefaults.value))
   } catch (err) {
     console.warn('wycal: could not persist calendar defaults', err)
   }

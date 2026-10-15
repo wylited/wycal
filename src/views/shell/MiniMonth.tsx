@@ -7,10 +7,10 @@
  * Split out of Sidebar.tsx (§10: files ≤ ~400 lines).
  */
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { occurrences } from '../../stores/events';
-import { prefs } from '../../stores/prefs';
-import { addDays, dayKey, startOfWeek } from '../../lib/util/date';
-import { icsDateToDate } from '../../lib/ics/types';
+import { occurrences } from '@wycal/core/stores/events';
+import { prefs } from '@wycal/core/stores/prefs';
+import { addDays, dayKey, startOfWeek } from '@wycal/core/lib/util/date';
+import { icsDateToDate } from '@wycal/core/lib/ics/types';
 import { gotoCalendarQuery } from '../../routes';
 import { Icon } from '../../ui/icons';
 
