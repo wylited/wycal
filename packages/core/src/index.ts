@@ -70,6 +70,10 @@ export {
   stuckTopLevel,
 } from './stores/todos'
 export * from './stores/prefs'
+// snapshot re-exported named: the per-store serialize/hydrate functions
+// share names, so their star exports stay subpath-only
+// (`@wycal/core/stores/<store>`); the aggregate is the barrel surface.
+export { SNAPSHOT_VERSION, serializeSnapshot, hydrateSnapshot, type WycalSnapshot } from './stores/snapshot'
 export * from './stores/toasts'
 
 // -- nl + search ---------------------------------------------------------------

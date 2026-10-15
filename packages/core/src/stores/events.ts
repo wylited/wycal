@@ -750,3 +750,83 @@ export async function restoreEvent(undo: EventDeleteUndo): Promise<void> {
     push('error', failureMessage(err, 'restore the event'))
   }
 }
+
+// ---------------------------------------------------------------------------
+// Offline snapshot (CONTRACTS §36 mobile boot)
+// ---------------------------------------------------------------------------
+
+function isEventRecord(v: unknown): v is EventRecord {
+  if (typeof v !== 'object' || v === null) return false
+  const r = v as Record<string, unknown>
+  if (
+    typeof r.key !== 'string' ||
+    typeof r.calendarUrl !== 'string' ||
+    typeof r.href !== 'string' ||
+    typeof r.etag !== 'string' ||
+    typeof r.data !== 'object' ||
+    r.data === null
+  ) {
+    return false
+  }
+  const d = r.data as Record<string, unknown>
+  return (
+    typeof d.uid === 'string' &&
+    typeof d.summary === 'string' &&
+    typeof d.start === 'object' &&
+    d.start !== null &&
+    typeof (d.start as Record<string, unknown>).utc === 'string'
+  )
+}
+
+/** JSON entry-array (`[key, record][]`) → Map; null when any entry is malformed. */
+function entriesToEventMap(v: unknown): Map<string, EventRecord> | null {
+  if (!Array.isArray(v)) return null
+  const out = new Map<string, EventRecord>()
+  for (const e of v) {
+    if (!Array.isArray(e) || e.length !== 2 || typeof e[0] !== 'string' || !isEventRecord(e[1])) return null
+    out.set(e[0], e[1])
+  }
+  return out
+}
+
+/**
+ * Snapshot = both record Maps as JSON entry arrays plus the revision counter.
+ * Records carry their hrefs/etags, so the next sync delta-applies against
+ * restored state exactly as if it had been fetched. Occurrence buckets and
+ * per-calendar versions are derived caches — not carried; hydrate
+ * invalidates them.
+ */
+export function serializeSnapshot(): unknown {
+  return {
+    base: [...baseEvents.value.entries()],
+    overrides: [...overrides.value.entries()],
+    revision: revision.value,
+  }
+}
+
+/**
+ * Restore records. Pure memory restore — no writes, toasts, or network; the
+ * signals get fresh Map identities so watchers re-run, and every touched
+ * calendar's version is bumped so stale occurrence buckets drop.
+ * Malformed input is a no-op (fresh-boot semantics).
+ */
+export function hydrateSnapshot(snap: unknown): void {
+  try {
+    if (typeof snap !== 'object' || snap === null) return
+    const s = snap as { base?: unknown; overrides?: unknown; revision?: unknown }
+    const base = entriesToEventMap(s.base)
+    const ov = entriesToEventMap(s.overrides)
+    if (!base || !ov) return
+    baseEvents.value = base
+    overrides.value = ov
+    if (typeof s.revision === 'number' && Number.isFinite(s.revision) && s.revision >= 0) {
+      revision.value = Math.max(revision.value, s.revision)
+    }
+    const cals = new Set<string>()
+    for (const rec of base.values()) cals.add(rec.calendarUrl)
+    for (const rec of ov.values()) cals.add(rec.calendarUrl)
+    for (const cal of cals) bumpCalVersion(cal)
+  } catch {
+    // Malformed snapshot → leave the store as-is (fresh-boot semantics).
+  }
+}

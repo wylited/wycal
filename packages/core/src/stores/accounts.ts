@@ -205,3 +205,42 @@ export function removeAccount(id: string): void {
   accounts.value = hydrate(stored)
   persistStored(stored)
 }
+
+// ---------------------------------------------------------------------------
+// Offline snapshot (CONTRACTS §36 mobile boot)
+// ---------------------------------------------------------------------------
+
+/**
+ * Snapshot = the identity rows verbatim (`StoredAccount[]`). NEVER includes
+ * secrets: they stay wherever the host put them (kv seam / secure store),
+ * and a hydrated account without a resolvable secret reads
+ * `password: ''` / `needsPassword: true` until the host unlocks it.
+ */
+export function serializeSnapshot(): unknown {
+  return stored.map((a) => ({ ...a }))
+}
+
+/**
+ * Restore identity rows. Pure memory restore — no kv writes (not even the
+ * session-secret promotion `hydrate()` does), no toasts, no network.
+ * Malformed input (non-array / bad rows dropped) is a no-op, matching
+ * fresh-boot semantics.
+ */
+export function hydrateSnapshot(snap: unknown): void {
+  try {
+    if (!Array.isArray(snap)) return
+    const rows = snap.filter(isStoredAccount).map((a) => ({
+      id: a.id,
+      url: a.url,
+      username: a.username,
+      rememberPassword: a.rememberPassword === true,
+    }))
+    stored = rows
+    accounts.value = rows.map((row) => {
+      const password = resolveSecret(row.id, row.rememberPassword)
+      return { ...row, password, needsPassword: password === '' }
+    })
+  } catch {
+    // Malformed snapshot → leave the store as-is (fresh-boot semantics).
+  }
+}

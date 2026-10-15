@@ -185,3 +185,61 @@ function hrefOfCollection(href: string): string {
   const idx = href.lastIndexOf('/')
   return idx > 0 ? href.slice(0, idx) : href
 }
+
+// ---------------------------------------------------------------------------
+// Offline snapshot (CONTRACTS §36 mobile boot)
+// ---------------------------------------------------------------------------
+
+function isContactRecord(v: unknown): v is ContactRecord {
+  if (typeof v !== 'object' || v === null) return false
+  const r = v as Record<string, unknown>
+  if (typeof r.href !== 'string' || typeof r.etag !== 'string' || typeof r.data !== 'object' || r.data === null) {
+    return false
+  }
+  const d = r.data as Record<string, unknown>
+  return typeof d.uid === 'string' && typeof d.fn === 'string'
+}
+
+/** JSON entry-array (`[href, record][]`) → Map; null when any entry is malformed. */
+function entriesToContactMap(v: unknown): Map<string, ContactRecord> | null {
+  if (!Array.isArray(v)) return null
+  const out = new Map<string, ContactRecord>()
+  for (const e of v) {
+    if (!Array.isArray(e) || e.length !== 2 || typeof e[0] !== 'string' || !isContactRecord(e[1])) return null
+    out.set(e[0], e[1])
+  }
+  return out
+}
+
+/**
+ * Snapshot = the contact Map as a JSON entry array plus `contactsRevision`
+ * (the engine's birthday-materializer checkpoint input). The tag filter and
+ * open-contact request are session UI state — deliberately not carried.
+ */
+export function serializeSnapshot(): unknown {
+  return {
+    contacts: [...contacts.value.entries()],
+    revision: contactsRevision,
+  }
+}
+
+/**
+ * Restore records. Pure memory restore — no writes, toasts, or network; the
+ * signal gets a fresh Map identity so watchers re-run, and the revision is
+ * restored monotonically so the birthday materializer sees a change.
+ * Malformed input is a no-op (fresh-boot semantics).
+ */
+export function hydrateSnapshot(snap: unknown): void {
+  try {
+    if (typeof snap !== 'object' || snap === null) return
+    const s = snap as { contacts?: unknown; revision?: unknown }
+    const map = entriesToContactMap(s.contacts)
+    if (!map) return
+    contacts.value = map
+    if (typeof s.revision === 'number' && Number.isFinite(s.revision) && s.revision >= 0) {
+      contactsRevision = Math.max(contactsRevision, s.revision)
+    }
+  } catch {
+    // Malformed snapshot → leave the store as-is (fresh-boot semantics).
+  }
+}

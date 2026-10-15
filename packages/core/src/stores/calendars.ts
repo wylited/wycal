@@ -201,3 +201,65 @@ export async function setCollectionColor(collection: DavCollection, hex: string)
     throw err
   }
 }
+
+// ---------------------------------------------------------------------------
+// Offline snapshot (CONTRACTS §36 mobile boot)
+// ---------------------------------------------------------------------------
+
+function isDavCollection(v: unknown): v is DavCollection {
+  if (typeof v !== 'object' || v === null) return false
+  const c = v as Record<string, unknown>
+  return (
+    typeof c.url === 'string' &&
+    typeof c.name === 'string' &&
+    (c.kind === 'calendar' || c.kind === 'addressbook') &&
+    Array.isArray(c.components) &&
+    c.components.every((x) => typeof x === 'string')
+  )
+}
+
+/**
+ * Snapshot = the collection registry plus both domains' visible/hidden URL
+ * sets — everything needed to gate views offline before the first discovery
+ * round. `visibilityVersion` itself is not carried: hydrate bumps it once,
+ * which is all observers need.
+ */
+export function serializeSnapshot(): unknown {
+  return {
+    collections: collections.value.map((c) => ({ ...c })),
+    domains: {
+      schedule: { visible: [...domains.schedule.visible.value], hidden: [...domains.schedule.hidden.value] },
+      agenda: { visible: [...domains.agenda.visible.value], hidden: [...domains.agenda.hidden.value] },
+    },
+  }
+}
+
+/**
+ * Restore registry + visibility sets. Pure memory restore — no kv writes
+ * (`persist` is deliberately skipped; the kv seam holds its own copy), no
+ * toasts, no network. All-or-nothing: when the shape is malformed the store
+ * is left as-is (fresh-boot semantics); a missing visible/hidden array
+ * inside a well-formed domain reads as empty.
+ */
+export function hydrateSnapshot(snap: unknown): void {
+  try {
+    if (typeof snap !== 'object' || snap === null) return
+    const s = snap as { collections?: unknown; domains?: unknown }
+    if (!Array.isArray(s.collections) || !s.collections.every(isDavCollection)) return
+    if (typeof s.domains !== 'object' || s.domains === null) return
+    const d = s.domains as Record<VisibilityDomain, { visible?: unknown; hidden?: unknown } | null>
+    for (const domain of ['schedule', 'agenda'] as const) {
+      if (typeof d[domain] !== 'object' || d[domain] === null) return
+    }
+    const loadArr = (v: unknown): string[] =>
+      Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
+    collections.value = s.collections.map((c) => ({ ...c }))
+    for (const domain of ['schedule', 'agenda'] as const) {
+      domains[domain].visible.value = new Set(loadArr(d[domain]!.visible))
+      domains[domain].hidden.value = new Set(loadArr(d[domain]!.hidden))
+    }
+    visibilityVersion.value++
+  } catch {
+    // Malformed snapshot → leave the store as-is (fresh-boot semantics).
+  }
+}
