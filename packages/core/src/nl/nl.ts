@@ -37,6 +37,10 @@
 import { parseQuickAddLine } from './quickAdd'
 import type { ParsedChip } from './quickAdd'
 
+/** Human hint for a parsed due (todo preview lines) — re-exported so the
+ *  facade's single `nl` slot carries the whole palette NL surface. */
+export { describeDue } from './quickAdd'
+
 /** What an interpreted line creates. */
 export type InterpKind = 'event' | 'todo' | 'contact'
 
@@ -73,7 +77,9 @@ export interface Interpretation {
   /** RRULE fragment, e.g. 'FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,WE'. */
   rrule?: string
   location?: string
-  priority?: 1 | 5 | 9
+  /** PRIORITY 1–9 — the grammar emits #A/#B/#C as 1/5/9; palette fields
+   *  mode may forward any 1–9. */
+  priority?: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9
   tags: string[]
   contact?: ContactCandidate
   confidence: 'high' | 'medium' | 'low'

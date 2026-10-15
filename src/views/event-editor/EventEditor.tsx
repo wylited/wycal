@@ -33,25 +33,12 @@ import { PALETTE, eventColorFor } from '@wycal/core/lib/util/colors'
 import { newUid } from '@wycal/core/lib/util/id'
 import { addDays, addMinutes } from '@wycal/core/lib/util/date'
 import { serializeIcsEvent } from '@wycal/core/lib/ics/serialize'
+import { WEEKDAYS, buildRepeat, parseRepeat, weekdayCode } from '@wycal/core/lib/ics/recurrence'
+import type { RepeatPreset, RepeatState } from '@wycal/core/lib/ics/recurrence'
 import { icsDateToDate, localDateStr, localMidnight, pad2, toIcsDateInput } from '@wycal/core/lib/ics/types'
 import type { DavCollection } from '@wycal/core/lib/caldav/types'
 import { closeEditor, editor } from './editorState'
 import type { EditorRequest } from './editorState'
-
-type RepeatPreset = 'none' | 'daily' | 'weekdays' | 'weekly' | 'monthly' | 'yearly' | 'custom'
-
-interface RepeatState {
-  preset: RepeatPreset
-  interval: number
-  byDay: string[]
-}
-
-/** BYDAY codes in rule order, Monday first. */
-const WEEKDAYS = [
-  { code: 'MO', label: 'Mo', name: 'Monday' }, { code: 'TU', label: 'Tu', name: 'Tuesday' }, { code: 'WE', label: 'We', name: 'Wednesday' },
-  { code: 'TH', label: 'Th', name: 'Thursday' }, { code: 'FR', label: 'Fr', name: 'Friday' },
-  { code: 'SA', label: 'Sa', name: 'Saturday' }, { code: 'SU', label: 'Su', name: 'Sunday' },
-] as const
 
 const REPEAT_OPTIONS = [
   ['none', 'None'], ['daily', 'Daily'], ['weekdays', 'Weekdays'], ['weekly', 'Weekly'],
@@ -61,12 +48,6 @@ const REPEAT_OPTIONS = [
 const REMINDER_OPTIONS = [
   ['none', 'None'], ['0', 'At time'], ['5', '5 min before'], ['10', '10 min before'], ['30', '30 min before'],
 ] as const
-
-/** Fixed-RRULE presets; weekly/custom are start-date dependent. */
-const PRESET_RULES: Partial<Record<RepeatPreset, string>> = {
-  daily: 'FREQ=DAILY', weekdays: 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR',
-  monthly: 'FREQ=MONTHLY', yearly: 'FREQ=YEARLY',
-}
 
 const SCOPE_OPTIONS: { value: EditScope; label: string }[] = [
   { value: 'this', label: 'This event' }, { value: 'future', label: 'This and following' }, { value: 'all', label: 'All events' },
@@ -127,55 +108,6 @@ function useConfirmDelete(remove: () => void) {
   }
   useEffect(() => () => window.clearTimeout(timer.current), [])
   return { armed, activate, disarm }
-}
-// --- RRULE mapping (raw value on IcsEvent, e.g. FREQ=WEEKLY;BYDAY=MO) ------
-
-function rruleParam(rule: string, name: string): string | undefined {
-  return new RegExp(`(?:^|;)${name}=([^;]+)`).exec(rule)?.[1]
-}
-
-/** BYDAY code of a local Date's weekday. */
-function weekdayCode(d: Date): string {
-  return WEEKDAYS[(d.getDay() + 6) % 7].code
-}
-
-/** Best-effort inverse of buildRepeat; rules outside the preset vocabulary degrade to Custom. */
-function parseRepeat(rrule: string | undefined, start: Date): RepeatState {
-  const fallback = [weekdayCode(start)]
-  if (!rrule) return { preset: 'none', interval: 1, byDay: fallback }
-  const freq = rruleParam(rrule, 'FREQ')
-  const iv = Number(rruleParam(rrule, 'INTERVAL') ?? 1)
-  const interval = Number.isFinite(iv) && iv >= 1 ? Math.floor(iv) : 1
-  const rawDays = rruleParam(rrule, 'BYDAY')
-  const dayList = rawDays !== undefined ? rawDays.split(',') : []
-  // Only plain 'MO'–'SU' codes are representable; '2MO'-style prefixes are not.
-  const days = dayList.filter((d) => WEEKDAYS.some((w) => w.code === d))
-  // Clauses the presets cannot express force Custom so an untouched rule
-  // round-trips verbatim instead of being silently rewritten.
-  const extra =
-    (rawDays !== undefined && days.length !== dayList.length) ||
-    rruleParam(rrule, 'BYMONTHDAY') !== undefined ||
-    rruleParam(rrule, 'BYMONTH') !== undefined ||
-    rruleParam(rrule, 'BYSETPOS') !== undefined
-  const simple = interval === 1 && !extra
-  const isWeekdays = days.length === 5 && WEEKDAYS.slice(0, 5).every((w) => days.includes(w.code))
-  if (freq === 'DAILY' && simple && rawDays === undefined) return { preset: 'daily', interval, byDay: fallback }
-  if (freq === 'WEEKLY' && simple && isWeekdays) return { preset: 'weekdays', interval, byDay: days }
-  if (freq === 'WEEKLY' && simple && days.length <= 1) return { preset: 'weekly', interval, byDay: days.length ? days : fallback }
-  if (freq === 'MONTHLY' && simple) return { preset: 'monthly', interval, byDay: fallback }
-  if (freq === 'YEARLY' && simple) return { preset: 'yearly', interval, byDay: fallback }
-  return { preset: 'custom', interval, byDay: days.length ? days : fallback }
-}
-
-/** Preset + custom controls → raw RRULE value (undefined = no repetition). */
-function buildRepeat(state: RepeatState, start: Date): string | undefined {
-  if (state.preset === 'none') return undefined
-  if (state.preset === 'weekly') return `FREQ=WEEKLY;BYDAY=${weekdayCode(start)}`
-  const preset = PRESET_RULES[state.preset]
-  if (preset) return preset
-  const days = WEEKDAYS.filter((w) => state.byDay.includes(w.code)).map((w) => w.code)
-  const interval = Math.max(1, Math.floor(state.interval) || 1)
-  return `FREQ=WEEKLY;INTERVAL=${interval};BYDAY=${days.length ? days.join(',') : weekdayCode(start)}`
 }
 
 /** First VALARM trigger → select value; unknown triggers normalize to None. */

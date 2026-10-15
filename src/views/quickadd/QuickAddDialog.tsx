@@ -18,25 +18,30 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks'
 import type { JSX } from 'preact'
 import { format } from 'date-fns'
 import { signal } from '@preact/signals'
-import type { IcsDate, IcsEvent, IcsTodo } from '@wycal/core/lib/ics/types'
-import { floatingWallIso, prioLetter, toIcsDateInput } from '@wycal/core/lib/ics/types'
-import { newUid } from '@wycal/core/lib/util/id'
+import { prioLetter } from '@wycal/core/lib/ics/types'
+import type { Interpretation } from '@wycal/core/nl/nl'
+import {
+  DEFAULT_EVENT_MINUTES,
+  describeRecurrence,
+  eventFromInterpretation,
+  interpretationFromFields,
+  interpretationFromLine,
+  planEventDraft,
+  todoFromInterpretation,
+  type QuickAddFields,
+} from '@wycal/core/nl/draft'
 import { collections, isCalendarVisible } from '@wycal/core/stores/calendars'
 import { createEvent, deleteEvent } from '@wycal/core/stores/events'
 import { createTodo, deleteTodo } from '@wycal/core/stores/todos'
 import { push } from '@wycal/core/stores/toasts'
 import { bumpDialogClose, bumpDialogOpen } from '../../stores/ui'
 import { Modal } from '../../ui/Modal'
-import {
-  describeDue,
-  parseQuickAddLine,
-  type ParsedQuickAddLine,
-  type QuickAddDue,
-  type QuickAddKind,
-} from '@wycal/core/nl/quickAdd'
+import { describeDue, parseQuickAddLine, type ParsedQuickAddLine, type QuickAddKind } from '@wycal/core/nl/quickAdd'
 
 /** Dialog entry mode: 'auto' trusts the line's own kind inference. */
 export type QuickAddMode = 'auto' | 'event' | 'todo'
+
+export type { QuickAddFields }
 
 interface QuickAddRequest {
   mode: QuickAddMode
@@ -46,21 +51,6 @@ interface QuickAddRequest {
   fields?: QuickAddFields
   /** Monotonic open counter: a key so re-opens remount (fresh state + autofocus). */
   seq: number
-}
-
-/** Structured palette prefill: when present the dialog skips re-parsing and
- *  builds the entry from these fields directly. */
-export interface QuickAddFields {
-  summary: string
-  kind: 'event' | 'todo'
-  allDay?: boolean
-  start?: Date          // timed start (set iff !allDay && timed)
-  durationMin?: number  // event duration
-  due?: Date            // todo due (day precision)
-  rrule?: string
-  location?: string
-  tags?: string[]
-  priority?: number | null
 }
 
 /** Pending open request, or null while closed (todoEditor.ts pattern). */
@@ -105,61 +95,10 @@ const MODES: { value: QuickAddMode; label: string; title: string }[] = [
   { value: 'todo', label: 'Task', title: 'Always create a task' },
 ]
 
-const DAY_MS = 86_400_000
-/** Timed events default to 60m when the line parsed no duration (§16 Q). */
-const DEFAULT_EVENT_MINUTES = 60
-
 /** Inline failure line under the preview: toasts can go unseen while the
  *  dialog stays open (store also toasts on rollback), so the dialog itself
  *  must say the create failed. Shown on every failure path. */
 const CREATE_ERROR_TEXT = 'Create failed — check your password in Settings, then retry.'
-
-/** Strictly-next half-hour boundary (mirrors stores/ui nextHalfHour:
- *  14:00:23 → 14:30, 14:30:00 → 15:00). */
-function nextHalfHour(): Date {
-  const now = new Date()
-  const d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), now.getMinutes())
-  d.setMinutes(d.getMinutes() + 30 - (d.getMinutes() % 30))
-  return d
-}
-
-interface EventPlan {
-  start: Date
-  end: Date
-  allDay: boolean
-}
-
-/**
- * Event fields from a parsed line: a timed token → start there, end at the
- * parsed duration (default 60m); a duration token without a wall time → timed
- * at the next half-hour (a duration implies a timed event); a date-only match
- * or nothing → an all-day event on that date (today when none).
- */
-function planEvent(p: ParsedQuickAddLine): EventPlan {
-  if (p.dueOrStart !== undefined && !p.dueOrStart.allDay) {
-    const start = p.dueOrStart.date
-    return { start, end: new Date(start.getTime() + (p.durationMinutes ?? DEFAULT_EVENT_MINUTES) * 60_000), allDay: false }
-  }
-  if (p.durationMinutes !== undefined) {
-    const day = p.dueOrStart?.date
-    const nh = nextHalfHour()
-    const start =
-      day === undefined
-        ? nh
-        : new Date(day.getFullYear(), day.getMonth(), day.getDate(), nh.getHours(), nh.getMinutes())
-    return { start, end: new Date(start.getTime() + p.durationMinutes * 60_000), allDay: false }
-  }
-  const day = p.dueOrStart !== undefined ? p.dueOrStart.date : new Date()
-  const start = new Date(day.getFullYear(), day.getMonth(), day.getDate())
-  return { start, end: new Date(start.getTime() + DAY_MS), allDay: true }
-}
-
-/** Parsed due → IcsDate: all-day → VALUE=DATE form; timed → floating wall
- *  time (the exact form TasksView's quick-add writes). */
-function todoDue(d: QuickAddDue): IcsDate {
-  if (d.allDay) return toIcsDateInput(new Date(d.date.getFullYear(), d.date.getMonth(), d.date.getDate()), true)
-  return floatingWallIso(d.date)
-}
 
 /** Visible calendars accepting this kind, collection order (first = default)
  *  — TasksView quick-add parity, with VEVENT for events / VTODO for tasks. */
@@ -200,7 +139,7 @@ function describeEntry(kind: QuickAddKind, p: ParsedQuickAddLine, cal: { name: s
   if (p.summary === '') return ''
   const bits: string[] = [kind === 'event' ? 'Event' : 'Task']
   if (kind === 'event') {
-    const plan = planEvent(p)
+    const plan = planEventDraft(interpretationFromLine(p, 'event'))
     bits.push(format(plan.start, 'EEE MMM d'))
     bits.push(plan.allDay ? 'all-day' : describeRange(plan.start, plan.end))
   } else if (p.dueOrStart !== undefined) {
@@ -211,34 +150,6 @@ function describeEntry(kind: QuickAddKind, p: ParsedQuickAddLine, cal: { name: s
   for (const tag of p.tags) bits.push(`+${tag}`)
   if (cal !== undefined) bits.push(cal.name)
   return `→ ${bits.join(' · ')}`
-}
-
-const BYDAY_FULL: Record<string, string> = {
-  MO: 'Mon', TU: 'Tue', WE: 'Wed', TH: 'Thu', FR: 'Fri', SA: 'Sat', SU: 'Sun',
-}
-
-const FREQ_WORD: Record<string, string> = {
-  DAILY: 'day', WEEKLY: 'week', MONTHLY: 'month', YEARLY: 'year',
-}
-
-/** 'FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,WE' → 'Every 2 weeks on Mon, Wed'.
- *  Local copy — CommandPalette's describeRrule is module-private there. */
-function describeRrule(rrule: string): string {
-  const parts: Record<string, string> = {}
-  for (const part of rrule.split(';')) {
-    const eq = part.indexOf('=')
-    if (eq > 0) parts[part.slice(0, eq).toUpperCase()] = part.slice(eq + 1)
-  }
-  const freq = parts.FREQ ?? ''
-  const noun = FREQ_WORD[freq] ?? freq.toLowerCase()
-  const interval = Number(parts.INTERVAL ?? '1')
-  const bits = interval > 1 ? `Every ${interval} ${noun}s` : noun === 'day' ? 'Every day' : `Every ${noun}`
-  const byday = parts.BYDAY
-  if (byday === 'MO,TU,WE,TH,FR') return `${bits} on weekdays`
-  if (byday !== undefined) {
-    return `${bits} on ${byday.split(',').map((d) => BYDAY_FULL[d] ?? d).join(', ')}`
-  }
-  return bits
 }
 
 /** Fields-mode preview: describes exactly what Enter will create — the line
@@ -257,7 +168,7 @@ function describeFields(f: QuickAddFields, cal: { name: string } | undefined): s
       const end = new Date(start.getTime() + (f.durationMin ?? DEFAULT_EVENT_MINUTES) * 60_000)
       bits.push(describeRange(start, end))
     }
-    if (f.rrule !== undefined) bits.push(describeRrule(f.rrule))
+    if (f.rrule !== undefined) bits.push(describeRecurrence(f.rrule))
     if (f.location !== undefined && f.location !== '') bits.push(`@${f.location}`)
   } else {
     // Midnight wall → day-precision (all-day) due; a carried time stays timed.
@@ -314,6 +225,26 @@ function QuickAddCard(props: { initial: QuickAddRequest }) {
     }
   }
 
+  /** Create via the shared core builders (nl/draft) + the Undo toast
+   *  (design §5: the store delete owns its 'deleted' + Undo toast). */
+  async function create(interp: Interpretation, kind: QuickAddKind, target: { url: string }): Promise<void> {
+    if (kind === 'todo') {
+      const todo = todoFromInterpretation(interp)
+      const rec = await createTodo(target.url, todo)
+      push('success', `Created ${todo.summary}`, {
+        label: 'Undo',
+        run: () => void deleteTodo(rec).catch(() => {}),
+      })
+    } else {
+      const ev = eventFromInterpretation(interp)
+      const rec = await createEvent(target.url, ev)
+      push('success', `Created ${ev.summary}`, {
+        label: 'Undo',
+        run: () => void deleteEvent(rec, 'all').catch(() => {}),
+      })
+    }
+  }
+
   async function submit(): Promise<void> {
     if (text.trim() === '' || busy) return
     // New attempt: the previous failure line goes away (also via onInput).
@@ -331,45 +262,7 @@ function QuickAddCard(props: { initial: QuickAddRequest }) {
     }
     setBusy(true)
     try {
-      if (k === 'todo') {
-        const todo: IcsTodo = {
-          uid: newUid(),
-          summary: p.summary,
-          status: 'NEEDS-ACTION',
-          categories: p.tags,
-          priority: p.priority,
-          due: p.dueOrStart !== undefined ? todoDue(p.dueOrStart) : undefined,
-          exdates: [],
-          alarms: [],
-        }
-        const rec = await createTodo(target.url, todo)
-        // Undo (design §5): the store delete owns its 'deleted' + Undo toast.
-        push('success', `Created ${todo.summary}`, {
-          label: 'Undo',
-          run: () => void deleteTodo(rec).catch(() => {}),
-        })
-      } else {
-        const plan = planEvent(p)
-        const ev: IcsEvent = {
-          uid: newUid(),
-          summary: p.summary,
-          // Timed saves carry the local wall time (floatingWallIso), not the
-          // true instant — a toIcsDateInput floating form reads back shifted
-          // by the zone offset (the −8h bug).
-          start: plan.allDay ? toIcsDateInput(plan.start, true) : floatingWallIso(plan.start),
-          end: plan.allDay ? toIcsDateInput(plan.end, true) : floatingWallIso(plan.end),
-          allDay: plan.allDay,
-          categories: p.tags,
-          exdates: [],
-          attendees: [],
-          alarms: [],
-        }
-        const rec = await createEvent(target.url, ev)
-        push('success', `Created ${ev.summary}`, {
-          label: 'Undo',
-          run: () => void deleteEvent(rec, 'all').catch(() => {}),
-        })
-      }
+      await create(interpretationFromLine(p, k), k, target)
       closeQuickAdd()
     } catch {
       // Store rolled back + toasted (CONTRACTS §4); keep the dialog open.
@@ -389,61 +282,7 @@ function QuickAddCard(props: { initial: QuickAddRequest }) {
     }
     setBusy(true)
     try {
-      if (f.kind === 'todo') {
-        const prio =
-          f.priority !== null && f.priority !== undefined && f.priority >= 1 && f.priority <= 9
-            ? (f.priority as IcsTodo['priority'])
-            : undefined
-        // Midnight wall → day-precision (all-day) due; a carried time stays
-        // timed (same law as §14a's due inputs).
-        const due =
-          f.due === undefined
-            ? undefined
-            : todoDue({ text: '', date: f.due, allDay: f.due.getHours() === 0 && f.due.getMinutes() === 0 })
-        const todo: IcsTodo = {
-          uid: newUid(),
-          summary,
-          status: 'NEEDS-ACTION',
-          categories: f.tags ?? [],
-          priority: prio,
-          due,
-          exdates: [],
-          alarms: [],
-        }
-        const rec = await createTodo(target.url, todo)
-        // Undo (design §5): the store delete owns its 'deleted' + Undo toast.
-        push('success', `Created ${todo.summary}`, {
-          label: 'Undo',
-          run: () => void deleteTodo(rec).catch(() => {}),
-        })
-      } else {
-        const base = f.start ?? new Date()
-        // All-day pins local midnight of the parsed day (planEvent idiom).
-        const start = f.allDay === true ? new Date(base.getFullYear(), base.getMonth(), base.getDate()) : base
-        const end =
-          f.allDay === true
-            ? new Date(start.getTime() + DAY_MS)
-            : new Date(start.getTime() + (f.durationMin ?? DEFAULT_EVENT_MINUTES) * 60_000)
-        const ev: IcsEvent = {
-          uid: newUid(),
-          summary,
-          // Same wall-time forms as the parse path above (−8h bug).
-          start: f.allDay === true ? toIcsDateInput(start, true) : floatingWallIso(start),
-          end: f.allDay === true ? toIcsDateInput(end, true) : floatingWallIso(end),
-          allDay: f.allDay === true,
-          rrule: f.rrule,
-          location: f.location,
-          categories: f.tags ?? [],
-          exdates: [],
-          attendees: [],
-          alarms: [],
-        }
-        const rec = await createEvent(target.url, ev)
-        push('success', `Created ${ev.summary}`, {
-          label: 'Undo',
-          run: () => void deleteEvent(rec, 'all').catch(() => {}),
-        })
-      }
+      await create(interpretationFromFields(f, summary), f.kind, target)
       closeQuickAdd()
     } catch {
       // Store rolled back + toasted (CONTRACTS §4); keep the dialog open.

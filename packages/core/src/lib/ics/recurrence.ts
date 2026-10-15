@@ -1,5 +1,7 @@
 // Recurrence plumbing (CONTRACTS §3): build an rrule.js RRuleSet from an
-// IcsEvent. (Raw-string RRULE editing helpers live in lib/util/date.ts.)
+// IcsEvent, and the repeat-preset vocabulary shared by the editors (web
+// EventEditor, mobile EventEditSheet) that maps UI repeat state ↔ raw RRULE
+// string. (Raw-string RRULE editing helpers live in lib/util/date.ts.)
 //
 // rrule.js lives in a single NAIVE datetime space: option dates are read via
 // their UTC fields, and returned "UTC" dates are fake-UTC. wycal defines that
@@ -51,4 +53,82 @@ export function rruleFromEvent(ev: IcsEvent, dtstart?: Date): RRuleSet | null {
   set.rrule(new RRule(opts))
   for (const ex of ev.exdates) set.exdate(naiveOf(ex))
   return set
+}
+
+// ---------------------------------------------------------------------------
+// Repeat presets (CONTRACTS §7): editor repeat state ↔ raw RRULE string.
+// Moved from the web EventEditor so web and mobile share ONE mapping; rules
+// outside this vocabulary parse to 'custom' and must round-trip verbatim
+// while the editor's repeat control is untouched (the dirty-flag contract).
+// ---------------------------------------------------------------------------
+
+/** Repeat vocabulary of the editors; 'custom' carries interval + BYDAY. */
+export type RepeatPreset = 'none' | 'daily' | 'weekdays' | 'weekly' | 'monthly' | 'yearly' | 'custom'
+
+/** Editor repeat state (select value plus the custom reveal's controls). */
+export interface RepeatState {
+  preset: RepeatPreset
+  interval: number
+  byDay: string[]
+}
+
+/** BYDAY codes in rule order, Monday first. */
+export const WEEKDAYS = [
+  { code: 'MO', label: 'Mo', name: 'Monday' }, { code: 'TU', label: 'Tu', name: 'Tuesday' }, { code: 'WE', label: 'We', name: 'Wednesday' },
+  { code: 'TH', label: 'Th', name: 'Thursday' }, { code: 'FR', label: 'Fr', name: 'Friday' },
+  { code: 'SA', label: 'Sa', name: 'Saturday' }, { code: 'SU', label: 'Su', name: 'Sunday' },
+] as const
+
+/** Fixed-RRULE presets; weekly/custom are start-date dependent. */
+const PRESET_RULES: Partial<Record<RepeatPreset, string>> = {
+  daily: 'FREQ=DAILY', weekdays: 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR',
+  monthly: 'FREQ=MONTHLY', yearly: 'FREQ=YEARLY',
+}
+
+function rruleParam(rule: string, name: string): string | undefined {
+  return new RegExp(`(?:^|;)${name}=([^;]+)`).exec(rule)?.[1]
+}
+
+/** BYDAY code of a local Date's weekday. */
+export function weekdayCode(d: Date): string {
+  return WEEKDAYS[(d.getDay() + 6) % 7].code
+}
+
+/** Best-effort inverse of buildRepeat; rules outside the preset vocabulary degrade to Custom. */
+export function parseRepeat(rrule: string | undefined, start: Date): RepeatState {
+  const fallback = [weekdayCode(start)]
+  if (!rrule) return { preset: 'none', interval: 1, byDay: fallback }
+  const freq = rruleParam(rrule, 'FREQ')
+  const iv = Number(rruleParam(rrule, 'INTERVAL') ?? 1)
+  const interval = Number.isFinite(iv) && iv >= 1 ? Math.floor(iv) : 1
+  const rawDays = rruleParam(rrule, 'BYDAY')
+  const dayList = rawDays !== undefined ? rawDays.split(',') : []
+  // Only plain 'MO'–'SU' codes are representable; '2MO'-style prefixes are not.
+  const days = dayList.filter((d) => WEEKDAYS.some((w) => w.code === d))
+  // Clauses the presets cannot express force Custom so an untouched rule
+  // round-trips verbatim instead of being silently rewritten.
+  const extra =
+    (rawDays !== undefined && days.length !== dayList.length) ||
+    rruleParam(rrule, 'BYMONTHDAY') !== undefined ||
+    rruleParam(rrule, 'BYMONTH') !== undefined ||
+    rruleParam(rrule, 'BYSETPOS') !== undefined
+  const simple = interval === 1 && !extra
+  const isWeekdays = days.length === 5 && WEEKDAYS.slice(0, 5).every((w) => days.includes(w.code))
+  if (freq === 'DAILY' && simple && rawDays === undefined) return { preset: 'daily', interval, byDay: fallback }
+  if (freq === 'WEEKLY' && simple && isWeekdays) return { preset: 'weekdays', interval, byDay: days }
+  if (freq === 'WEEKLY' && simple && days.length <= 1) return { preset: 'weekly', interval, byDay: days.length ? days : fallback }
+  if (freq === 'MONTHLY' && simple) return { preset: 'monthly', interval, byDay: fallback }
+  if (freq === 'YEARLY' && simple) return { preset: 'yearly', interval, byDay: fallback }
+  return { preset: 'custom', interval, byDay: days.length ? days : fallback }
+}
+
+/** Preset + custom controls → raw RRULE value (undefined = no repetition). */
+export function buildRepeat(state: RepeatState, start: Date): string | undefined {
+  if (state.preset === 'none') return undefined
+  if (state.preset === 'weekly') return `FREQ=WEEKLY;BYDAY=${weekdayCode(start)}`
+  const preset = PRESET_RULES[state.preset]
+  if (preset) return preset
+  const days = WEEKDAYS.filter((w) => state.byDay.includes(w.code)).map((w) => w.code)
+  const interval = Math.max(1, Math.floor(state.interval) || 1)
+  return `FREQ=WEEKLY;INTERVAL=${interval};BYDAY=${days.length ? days.join(',') : weekdayCode(start)}`
 }
