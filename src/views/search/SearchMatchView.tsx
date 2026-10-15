@@ -11,7 +11,7 @@
  */
 import { useState } from 'preact/hooks'
 import type { ComponentChildren } from 'preact'
-import { addDays, dayKey, fmtDate, fmtTime } from '@wycal/core/lib/util/date'
+import { dayKey, fmtDate, fmtEventRange, fmtTime } from '@wycal/core/lib/util/date'
 import { icsDateToDate } from '@wycal/core/lib/ics/types'
 import { prefs } from '@wycal/core/stores/prefs'
 import { toggleDone } from '@wycal/core/stores/todos'
@@ -81,24 +81,6 @@ interface EventRowProps {
   onToggleExpanded?: () => void
 }
 
-/** `Wed, Oct 9 · 14:00 – 15:30`, cross-day `Wed, Oct 9 14:00 – Thu, Oct 10 09:00`,
- *  all-day `Wed, Oct 9` / `Wed, Oct 9 – Fri, Oct 11` (ICS DTEND is exclusive —
- *  the displayed all-day end steps back one day; same convention as the event
- *  detail popover). */
-function eventRangeText(start: Date, end: Date | null | undefined, allDay: boolean, hour12: boolean): string {
-  const crossDay = end != null && dayKey(end) !== dayKey(start)
-  if (allDay) {
-    if (crossDay) return `${fmtDate(start, { weekday: true })} – ${fmtDate(addDays(end, -1), { weekday: true })}`
-    return fmtDate(start, { weekday: true })
-  }
-  if (crossDay) {
-    return `${fmtDate(start, { weekday: true })} ${fmtTime(start, hour12)} – ${fmtDate(end, { weekday: true })} ${fmtTime(end, hour12)}`
-  }
-  return end
-    ? `${fmtDate(start, { weekday: true })} · ${fmtTime(start, hour12)} – ${fmtTime(end, hour12)}`
-    : fmtDate(start, { weekday: true })
-}
-
 /** Event row: colored dot · date+time · title · calendar name. The date makes
  *  recurring/cross-day occurrences distinguishable (§30 scoped sidebar search:
  *  schedule results must say WHEN each hit happens). With `detail` the row
@@ -144,7 +126,7 @@ export function EventRow(props: EventRowProps) {
       {open && (
         <RowDetail openLabel="Open in schedule" onOpen={props.detail.onOpen}>
           <p class="flex flex-wrap items-center gap-1.5 text-xs text-fg tabular-nums">
-            {eventRangeText(props.when, props.detail.end, props.allDay, props.hour12)}
+            {fmtEventRange(props.when, props.detail.end, props.allDay, props.hour12)}
             {props.allDay && (
               <span class="rounded bg-surface-3 px-1.5 py-px text-[10px] text-muted">All-day</span>
             )}

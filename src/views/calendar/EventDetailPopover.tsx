@@ -14,7 +14,7 @@ import type { EventDeleteUndo, EventRecord } from '@wycal/core/stores/events'
 import { collections } from '@wycal/core/stores/calendars'
 import { prefs } from '@wycal/core/stores/prefs'
 import { push } from '@wycal/core/stores/toasts'
-import { addDays, dayKey, fmtDate, fmtTime } from '@wycal/core/lib/util/date'
+import { fmtEventRange } from '@wycal/core/lib/util/date'
 import { serializeIcsEvent } from '@wycal/core/lib/ics/serialize'
 import { icsDateToDate } from '@wycal/core/lib/ics/types'
 import { eventColorFor } from '@wycal/core/lib/util/colors'
@@ -23,25 +23,6 @@ import { bumpPopoverClose, bumpPopoverOpen } from '../../stores/ui'
 import { Icon } from '../../ui/icons'
 
 const WIDTH = 340
-
-/** Human range for the popover: `Wed, Oct 9 · 14:00 – 15:30`, cross-day
- * `Oct 9 14:00 – Oct 10 09:00`, all-day `Oct 9` / `Oct 9 – Oct 11`
- * (ICS DTEND is exclusive, so the all-day display end steps back one day). */
-function timeRangeText(record: EventRecord): string {
-  const ev = record.data
-  const s = icsDateToDate(ev.start)
-  const e = ev.end ? icsDateToDate(ev.end) : undefined
-  const { hour12 } = prefs.value
-  if (ev.allDay) {
-    if (e && dayKey(e) !== dayKey(s)) return `${fmtDate(s)} – ${fmtDate(addDays(e, -1))}`
-    return fmtDate(s)
-  }
-  if (e && dayKey(e) !== dayKey(s)) {
-    return `${fmtDate(s, { weekday: true })} ${fmtTime(s, hour12)} – ${fmtDate(e, { weekday: true })} ${fmtTime(e, hour12)}`
-  }
-  const day = fmtDate(s, { weekday: true })
-  return e ? `${day} · ${fmtTime(s, hour12)} – ${fmtTime(e, hour12)}` : day
-}
 
 /**
  * ⌫/Delete keybind path (CalendarView §22): routes to the editor, which owns
@@ -196,7 +177,7 @@ export function EventDetailPopover(props: {
         </div>
 
         <p class="flex flex-wrap items-center gap-1.5 text-xs text-fg tabular-nums">
-          {timeRangeText(record)}
+          {fmtEventRange(icsDateToDate(ev.start), ev.end ? icsDateToDate(ev.end) : undefined, ev.allDay, prefs.value.hour12)}
           {ev.allDay && (
             <span class="rounded bg-surface-2 px-1.5 py-px text-[10px] text-muted">All-day</span>
           )}

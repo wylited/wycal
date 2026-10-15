@@ -101,6 +101,39 @@ export function fmtDate(d: Date, opts: { weekday?: boolean; year?: boolean } = {
   }).format(d)
 }
 
+/** Short weekday alone, e.g. `Thu` (grid headers, weekday strips). */
+export function fmtWeekday(d: Date): string {
+  return df({ weekday: 'short' }).format(d)
+}
+
+/**
+ * Human range for an event, shared by the detail popover, search rows and the
+ * mobile sheets: `Wed, Oct 9 · 14:00 – 15:30`, cross-day
+ * `Wed, Oct 9 14:00 – Thu, Oct 10 09:00`, all-day `Wed, Oct 9` /
+ * `Wed, Oct 9 – Fri, Oct 11`. ICS DTEND is exclusive, so the displayed
+ * all-day end steps back one day.
+ */
+export function fmtEventRange(start: Date, end: Date | null | undefined, allDay: boolean, hour12: boolean): string {
+  if (allDay) {
+    // ICS DTEND is exclusive: the displayed last day is `end - 1d`, and the
+    // range test must run on THAT day. Testing the raw DTEND instead makes
+    // every ordinary one-day all-day event (DTEND = DTSTART + 1d) render as a
+    // bogus self-range, `Wed, Oct 14 – Wed, Oct 14` (birthdays hit this).
+    const last = end ? addDays(end, -1) : null
+    if (last && dayKey(last) !== dayKey(start)) {
+      return `${fmtDate(start, { weekday: true })} – ${fmtDate(last, { weekday: true })}`
+    }
+    return fmtDate(start, { weekday: true })
+  }
+  const crossDay = end != null && dayKey(end) !== dayKey(start)
+  if (crossDay) {
+    return `${fmtDate(start, { weekday: true })} ${fmtTime(start, hour12)} – ${fmtDate(end, { weekday: true })} ${fmtTime(end, hour12)}`
+  }
+  return end
+    ? `${fmtDate(start, { weekday: true })} · ${fmtTime(start, hour12)} – ${fmtTime(end, hour12)}`
+    : fmtDate(start, { weekday: true })
+}
+
 // ---------------------------------------------------------------------------
 // Calendar math (pure Date; no date-fns dependency in this layer)
 // ---------------------------------------------------------------------------
