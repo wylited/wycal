@@ -152,6 +152,29 @@ bun run dev     # dev server on :5173 (proxies /dav)
 bun run build   # tsc -b && vite build
 bun run test    # bun test (pure layers: ics, recurrence, vcard, caldav xml)
 bun run preview # built app on :4173 (also proxies /dav)
+
+## Nix
+
+The client is also a flake: `packages.<system>.default` is the Vite `dist/` built hermetically via [bun2nix](https://github.com/nix-community/bun2nix) (bun 1.4 lockfiles — pinned to the commit accepting `lockfileVersion: 2` until bun2nix releases it), and `nixosModules.wycal` serves it with darkhttpd behind your own reverse proxy.
+
+```sh
+nix build github:wylited/wycal          # static site into ./result
+nix run github:nix-community/bun2nix/0456acb1b7394fc14c414b056aa889df5124943a -- -o bun.nix   # after dep changes
+```
+
+NixOS (as deployed for `cal.ts.wyli.tech` on warden — the browser talks to the CalDAV server cross-origin, so the server vhost needs the CalDAV CORS headers):
+
+```nix
+inputs.wycal.url = "github:wylited/wycal";
+
+{
+  imports = [ inputs.wycal.nixosModules.wycal ];
+  services.wycal = {
+    enable = true;
+    package = inputs.wycal.packages.x86_64-linux.default;  # default port 8423
+  };
+}
+```
 ```
 
 `scripts/verify-dav.sh` boots a fresh Radicale, seeds it, and curl-verifies PROPFIND / sync-collection / calendar-query REPORTs plus seed idempotency. The fixture (config, users, seed data) lives under `scripts/radicale/`.

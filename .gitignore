@@ -5,4 +5,6 @@ scripts/radicale/data/
 *.local
 tsconfig.tsbuildinfo
 scripts/radicale/.venv/
+result
+result-*
 scripts/radicale/*.log
