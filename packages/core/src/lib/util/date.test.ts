@@ -1,6 +1,6 @@
 // Data-layer tests for the ONE shared event-range formatter (CONTRACTS §38):
-// it backs the web detail popover + search rows and the mobile agenda list,
-// event sheet and quick-add preview. Expectations are built from the same
+// it backs the detail popover, search rows and the quick-add preview.
+// Expectations are built from the same
 // public formatters (fmtDate/fmtTime) because Intl formats with the runtime
 // locale — these assertions pin the branch structure, not the words.
 import { describe, expect, it } from 'bun:test'

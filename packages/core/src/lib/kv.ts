@@ -1,7 +1,7 @@
 /**
  * KV persistence seam (CONTRACTS §36): the ONLY storage surface in core.
  *
- * Web defaults to localStorage/sessionStorage; other runtimes (mobile) boot
+ * Web defaults to localStorage/sessionStorage; other hosts boot
  * with `setKvBackend` BEFORE importing anything that reads `kv`/`kvSession`
  * (stores hydrate at module load). When neither is swapped in and no DOM
  * storage exists, an in-memory Map keeps the module graph loadable anywhere.
@@ -48,14 +48,14 @@ let persistent: EnumerableBackend =
 let session: EnumerableBackend =
   typeof sessionStorage !== 'undefined' ? webStorageBackend(sessionStorage) : memoryBackend()
 
-/** Device-persistent KV (web: localStorage; mobile: the swapped-in backend). */
+/** Device-persistent KV (web: localStorage; hosts: the swapped-in backend). */
 export const kv: KvBackend = {
   get: (k) => persistent.get(k),
   set: (k, v) => persistent.set(k, v),
   remove: (k) => persistent.remove(k),
 }
 
-/** Tab/session KV (web: sessionStorage; mobile: whatever the host provides). */
+/** Tab/session KV (web: sessionStorage; hosts: whatever they swap in). */
 export const kvSession: KvBackend = {
   get: (k) => session.get(k),
   set: (k, v) => session.set(k, v),
@@ -63,7 +63,7 @@ export const kvSession: KvBackend = {
 }
 
 /**
- * Swap the live backends (mobile boot). Both proxies flip together in one
+ * Swap the live backends (host boot). Both proxies flip together in one
  * synchronous step; a missing `session` falls back to the persistent backend.
  */
 export function setKvBackend(persistentBackend: KvBackend, sessionBackend?: KvBackend): void {

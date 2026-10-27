@@ -341,6 +341,21 @@ export function toggleDone(record: TodoRecord): Promise<void> {
   return updateTodo(record, patch)
 }
 
+/** Pre-completion open-state fields a completion-undo toast restores: the
+ *  exact STATUS (an IN-PROCESS task comes back IN-PROCESS, not
+ *  NEEDS-ACTION), the COMPLETED timestamp and PERCENT-COMPLETE. */
+export type TodoStatusFields = Pick<IcsTodo, 'status' | 'completed' | 'percentComplete'>
+
+/**
+ * Undo for a checkbox completion (§agenda list toast, deleteTodo's undo
+ * pattern): write the caller's captured pre-toggle fields back. The record
+ * may be stale by undo time — updateTodo re-resolves it by uid and the
+ * per-key mutation chain serializes against the completing PUT.
+ */
+export function restoreTodoStatus(record: TodoRecord, prev: TodoStatusFields): Promise<void> {
+  return updateTodo(record, { status: prev.status, completed: prev.completed, percentComplete: prev.percentComplete })
+}
+
 /**
  * Quick-action status cycle (§22 todo popover): TODO → IN-PROCESS →
  * COMPLETED → TODO. Entering COMPLETED mirrors toggleDone's write (COMPLETED
@@ -424,7 +439,7 @@ export function stuckTopLevel(): TodoRecord[] {
 }
 
 // ---------------------------------------------------------------------------
-// Offline snapshot (CONTRACTS §36 mobile boot)
+// Offline snapshot (CONTRACTS §36 offline boot)
 // ---------------------------------------------------------------------------
 
 function isTodoRecord(v: unknown): v is TodoRecord {

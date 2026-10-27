@@ -50,6 +50,7 @@ import { applyContactsSync, contacts, contactsRevision } from '../../stores/cont
 import type { ParsedContactObject } from '../../stores/contacts'
 import { applyTodoCollectionSync } from '../../stores/todos'
 import { prefs } from '../../stores/prefs'
+import { hydrateSnapshot, loadPersistedSnapshot, persistSnapshot } from '../../stores/snapshot'
 import {
   clearDiscovery,
   clientForAccount,
@@ -93,12 +94,46 @@ function setAccountState(accountId: string, state: AccountSyncStatus, message?: 
  */
 function syncErrorMessage(err: unknown): string {
   if (err instanceof DavError && err.status === 401) {
-    return 'Wrong username or password — unlock the account in Settings'
+    return 'Wrong username or password — remove and re-add the account in Settings'
   }
   const message = err instanceof Error && err.message ? err.message : String(err)
   return message.includes('network error')
     ? 'Cannot reach the CalDAV server — check the URL and that the server/proxy is running.'
     : message
+}
+
+// ---------------------------------------------------------------------------
+// Offline snapshot (CONTRACTS §36 offline boot)
+// ---------------------------------------------------------------------------
+
+const SNAPSHOT_DEBOUNCE_MS = 2000
+let snapshotTimer: number | undefined
+
+/**
+ * Debounced offline-snapshot persist: sync rounds land stores in memory, and
+ * one coalesced kv write (~2s) later the host's flush carries them to disk —
+ * a cold start against a dead server renders from that snapshot. Hooked into
+ * every account round and every delta round (CRUD writes settle through
+ * `requestSync`'s debounced/follow-up deltas, so local edits persist too).
+ */
+function persistSnapshotSoon(): void {
+  clearTimeout(snapshotTimer)
+  snapshotTimer = setTimeout(() => {
+    snapshotTimer = undefined
+    persistSnapshot()
+  }, SNAPSHOT_DEBOUNCE_MS) as unknown as number
+}
+
+/**
+ * Restore every store from the persisted offline snapshot — run BEFORE
+ * `initSync()` at boot: hydrated stores serve the first
+ * render while the initial account rounds (token-less, full, pruning)
+ * converge on server truth in the background. Absent, corrupt, or
+ * foreign-version snapshots are a no-op (fresh-boot semantics); never throws.
+ */
+export function hydrateOfflineSnapshot(): void {
+  const snap = loadPersistedSnapshot()
+  if (snap) hydrateSnapshot(snap)
 }
 
 // ---------------------------------------------------------------------------
@@ -408,6 +443,8 @@ async function runDeltaSync(key: string): Promise<void> {
     setAccountState(entry.accountId, 'ok')
   } catch (err) {
     setAccountState(entry.accountId, 'error', syncErrorMessage(err))
+  } finally {
+    persistSnapshotSoon()
   }
 }
 
@@ -468,6 +505,8 @@ async function syncAccount(account: DavAccount): Promise<void> {
     setAccountState(account.id, 'ok')
   } catch (err) {
     setAccountState(account.id, 'error', syncErrorMessage(err))
+  } finally {
+    persistSnapshotSoon()
   }
 }
 

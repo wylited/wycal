@@ -39,6 +39,7 @@ import {
   setRruleUntil,
 } from '../lib/util/date'
 import { isCalendarVisible, type VisibilityDomain } from './calendars'
+import { icsDateToDate as canonicalIcsDate } from '../lib/ics/types'
 import { push } from './toasts'
 
 export interface EventRecord {
@@ -268,15 +269,20 @@ export function occurrences(range: { start: string; end: string }, domain: Visib
         // Same interval-overlap rule as expandEvents: multi-day events that
         // begin before the window still count; missing ends get a nominal
         // one-day span.
-        const startMs = icsDateToDate(rec.data.start).getTime()
+        // Canonical instant (floating → system zone, matching the renderer's
+        // layout math). The naive icsDateToDate twin is for RRULE series-split
+        // math only — using it here filtered floating events at wall-as-UTC,
+        // i.e. off by the zone offset in range queries (a floating 18:00 event
+        // was invisible on its own day on an Asia/Hong_Kong device).
+        const startMs = canonicalIcsDate(rec.data.start).getTime()
         if (startMs >= rangeEnd) continue
-        const endMs = icsDateToDate(rec.data.end ?? shiftIcsDate(rec.data.start, 86400000)).getTime()
+        const endMs = canonicalIcsDate(rec.data.end ?? shiftIcsDate(rec.data.start, 86400000)).getTime()
         if (endMs <= rangeStart) continue
         out.push(rec)
       }
     }
   }
-  out.sort((a, b) => icsDateToDate(a.data.start).getTime() - icsDateToDate(b.data.start).getTime())
+  out.sort((a, b) => canonicalIcsDate(a.data.start).getTime() - canonicalIcsDate(b.data.start).getTime())
   return out
 }
 
@@ -321,7 +327,7 @@ function computeBucket(calendarUrl: string, monthStart: Date, monthEnd: Date): E
     const ov = grouped.get(baseKey(rec.data.uid, calendarUrl)) ?? NO_OVERRIDES
     for (const occ of expandEvents(rec.data, ov, range)) out.push(materialize(rec, occ))
   }
-  out.sort((a, b) => icsDateToDate(a.data.start).getTime() - icsDateToDate(b.data.start).getTime())
+  out.sort((a, b) => canonicalIcsDate(a.data.start).getTime() - canonicalIcsDate(b.data.start).getTime())
   return out
 }
 
@@ -752,7 +758,7 @@ export async function restoreEvent(undo: EventDeleteUndo): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Offline snapshot (CONTRACTS §36 mobile boot)
+// Offline snapshot (CONTRACTS §36 offline boot)
 // ---------------------------------------------------------------------------
 
 function isEventRecord(v: unknown): v is EventRecord {

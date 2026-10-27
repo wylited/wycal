@@ -203,6 +203,55 @@ describe('parseVcf — multi-value EMAIL/TEL/ADR', () => {
   });
 });
 
+describe('ADR component escapes (no component is ever dropped)', () => {
+  const bare = (): Vcard => ({ uid: 'adr-esc', fn: 'Ada', emails: [], tels: [], addresses: [], categories: [], raw: '' });
+
+  it('decodes an escaped ";" in ADR to a literal ";" in the flat value', () => {
+    const vcf = [
+      'BEGIN:VCARD',
+      'VERSION:4.0',
+      'UID:adr-esc',
+      'FN:Ada',
+      'ADR;TYPE=HOME:;;1 Main St\\;Apt 4;Kowloon;;0000;HK',
+      'END:VCARD',
+    ].join('\r\n');
+    expect(parseVcf(vcf)[0]!.addresses).toEqual([{ value: ';;1 Main St;Apt 4;Kowloon;;0000;HK', types: ['home'] }]);
+  });
+
+  it('re-serializes a flat value carrying \\; escapes byte-equal (no double-escape)', () => {
+    const out = serializeVcard({
+      ...bare(),
+      addresses: [{ value: ';;1 Main St\\;Apt 4;Kowloon;;0000;HK', types: ['home'] }],
+    });
+    expect(out).toContain('ADR;TYPE=home:;;1 Main St\\;Apt 4;Kowloon;;0000;HK');
+  });
+
+  it('folds a legacy overlong flat value into the country slot instead of truncating', () => {
+    const out = serializeVcard({
+      ...bare(),
+      addresses: [{ value: ';;1 Main St;Apt 4;Kowloon;;0000;HK', types: [] }],
+    });
+    expect(out).toContain('ADR:;;1 Main St;Apt 4;Kowloon;;0000\\; HK');
+  });
+
+  it('pads a short flat value to the 7 ADR slots', () => {
+    const out = serializeVcard({ ...bare(), addresses: [{ value: ';;1 Main St', types: [] }] });
+    expect(out).toContain('ADR:;;1 Main St');
+    const [reparsed] = parseVcf(out);
+    expect(reparsed!.addresses).toEqual([{ value: ';;1 Main St', types: [] }]);
+  });
+
+  it('escapes other TEXT characters per component and survives a parse round trip', () => {
+    const out = serializeVcard({
+      ...bare(),
+      addresses: [{ value: ';;Suite 5\\, Floor 2;Ville;;0000;Land', types: [] }],
+    });
+    expect(out).toContain('ADR:;;Suite 5\\, Floor 2;Ville;;0000;Land');
+    const [reparsed] = parseVcf(out);
+    expect(reparsed!.addresses).toEqual([{ value: ';;Suite 5, Floor 2;Ville;;0000;Land', types: [] }]);
+  });
+});
+
 describe('N / FN structured values', () => {
   it('parses unicode names and escaped components', () => {
     const [card] = parseVcf(UNICODE_VCF);

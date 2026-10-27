@@ -149,11 +149,36 @@ type NewAccount = {
   rememberPassword: boolean
 }
 
-/** Add an account (id generated), persist identity, keep its secret for this tab. */
+/**
+ * Canonical account URL: trimmed, trailing slashes stripped, `http://`
+ * prepended when the scheme is missing — a bare `127.0.0.1:5232` would
+ * otherwise die in `new URL()` during discovery with a developer-string
+ * error. Exported so hosts dedupe against the stored form.
+ */
+export function normalizeAccountUrl(url: string): string {
+  const trimmed = url.trim()
+  const withScheme = trimmed.includes('://') ? trimmed : `http://${trimmed}`
+  return withScheme.replace(/\/+$/, '')
+}
+
+/**
+ * Add an account (id generated), persist identity, keep its secret for this
+ * tab. Same normalized URL + username IS the same account: refresh its
+ * secret (a re-add doubles as an unlock) instead of stacking a duplicate
+ * row — the data-level guard for hosts whose Add button re-fires before a
+ * re-render disables it.
+ */
 export function addAccount(input: NewAccount): DavAccount {
+  const url = normalizeAccountUrl(input.url)
+  const existing = stored.find((a) => a.url === url && a.username === input.username)
+  if (existing) {
+    putSecret(existing.id, input.password, existing.rememberPassword)
+    accounts.value = hydrate(stored)
+    return accounts.value.find((a) => a.id === existing.id) ?? accounts.value[accounts.value.length - 1]
+  }
   const row: StoredAccount = {
     id: randomUuid(),
-    url: input.url.trim().replace(/\/+$/, ''),
+    url,
     username: input.username,
     rememberPassword: input.rememberPassword,
   }
@@ -207,7 +232,7 @@ export function removeAccount(id: string): void {
 }
 
 // ---------------------------------------------------------------------------
-// Offline snapshot (CONTRACTS §36 mobile boot)
+// Offline snapshot (CONTRACTS §36 offline boot)
 // ---------------------------------------------------------------------------
 
 /**

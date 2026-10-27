@@ -31,6 +31,7 @@ import {
   type QuickAddFields,
 } from '@wycal/core/nl/draft'
 import { collections, isCalendarVisible } from '@wycal/core/stores/calendars'
+import { prefs } from '@wycal/core/stores/prefs'
 import { createEvent, deleteEvent } from '@wycal/core/stores/events'
 import { createTodo, deleteTodo } from '@wycal/core/stores/todos'
 import { push } from '@wycal/core/stores/toasts'
@@ -143,10 +144,15 @@ function describeEntry(kind: QuickAddKind, p: ParsedQuickAddLine, cal: { name: s
     bits.push(format(plan.start, 'EEE MMM d'))
     bits.push(plan.allDay ? 'all-day' : describeRange(plan.start, plan.end))
   } else if (p.dueOrStart !== undefined) {
-    bits.push(describeDue(p.dueOrStart))
+    bits.push(describeDue(p.dueOrStart, prefs.value.hour12 ?? true))
   }
-  const letter = prioLetter(p.priority)
-  if (letter !== null) bits.push(`#${letter}`)
+  // Tasks only: the created VTODO carries PRIORITY, the VEVENT does not — an
+  // event preview must not promise a '#A' it drops (the event-pass re-parse
+  // in QuickAddCard already kept the '#A' text in the event's summary).
+  if (kind !== 'event') {
+    const letter = prioLetter(p.priority)
+    if (letter !== null) bits.push(`#${letter}`)
+  }
   for (const tag of p.tags) bits.push(`+${tag}`)
   if (cal !== undefined) bits.push(cal.name)
   return `→ ${bits.join(' · ')}`
@@ -173,7 +179,12 @@ function describeFields(f: QuickAddFields, cal: { name: string } | undefined): s
   } else {
     // Midnight wall → day-precision (all-day) due; a carried time stays timed.
     if (f.due !== undefined) {
-      bits.push(describeDue({ date: f.due, allDay: f.due.getHours() === 0 && f.due.getMinutes() === 0 }))
+      bits.push(
+        describeDue(
+          { date: f.due, allDay: f.due.getHours() === 0 && f.due.getMinutes() === 0 },
+          prefs.value.hour12 ?? true,
+        ),
+      )
     }
     if (f.priority != null) {
       const letter = prioLetter(f.priority)
@@ -204,8 +215,17 @@ function QuickAddCard(props: { initial: QuickAddRequest }) {
 
   const parsed = useMemo(() => parseQuickAddLine(text), [text])
   const kind: QuickAddKind = fields !== null ? fields.kind : mode === 'auto' ? parsed.kind : mode
+  // Event # honesty (core quickAdd keepHashPriority): IcsEvent has no
+  // PRIORITY, so the event pass keeps '#A' in the summary instead of parsing
+  // a priority the created VEVENT silently drops — the same re-parse nl.ts
+  // interpret() runs when a line flips to event. Todos consume '#A' normally.
+  // submit() applies the identical expression to what Enter creates.
+  const honest =
+    fields === null && kind === 'event' && parsed.priority !== undefined
+      ? parseQuickAddLine(text, true)
+      : parsed
   const cal = calsFor(kind)[0]
-  const preview = fields !== null ? describeFields(fields, cal) : describeEntry(kind, parsed, cal)
+  const preview = fields !== null ? describeFields(fields, cal) : describeEntry(kind, honest, cal)
 
   function cycleMode(dir: 1 | -1): void {
     const i = MODES.findIndex((m) => m.value === mode)
@@ -251,8 +271,11 @@ function QuickAddCard(props: { initial: QuickAddRequest }) {
     setCreateError(null)
     if (fields !== null) return submitFields(fields, text.trim())
     const line = text
-    const p = parseQuickAddLine(line)
-    const k: QuickAddKind = mode === 'auto' ? p.kind : mode
+    const base = parseQuickAddLine(line)
+    const k: QuickAddKind = mode === 'auto' ? base.kind : mode
+    // Event # honesty: the identical re-parse the preview above renders —
+    // '#A' stays in the created event's summary, no priority promised/dropped.
+    const p = k === 'event' && base.priority !== undefined ? parseQuickAddLine(line, true) : base
     if (p.summary === '') return
     const target = calsFor(k)[0]
     if (target === undefined) {

@@ -1,7 +1,7 @@
 // Recurrence plumbing (CONTRACTS §3): build an rrule.js RRuleSet from an
-// IcsEvent, and the repeat-preset vocabulary shared by the editors (web
-// EventEditor, mobile EventEditSheet) that maps UI repeat state ↔ raw RRULE
-// string. (Raw-string RRULE editing helpers live in lib/util/date.ts.)
+// IcsEvent, and the repeat-preset vocabulary shared by the event editors,
+// mapping UI repeat state ↔ raw RRULE string. (Raw-string RRULE editing
+// helpers live in lib/util/date.ts.)
 //
 // rrule.js lives in a single NAIVE datetime space: option dates are read via
 // their UTC fields, and returned "UTC" dates are fake-UTC. wycal defines that
@@ -57,7 +57,7 @@ export function rruleFromEvent(ev: IcsEvent, dtstart?: Date): RRuleSet | null {
 
 // ---------------------------------------------------------------------------
 // Repeat presets (CONTRACTS §7): editor repeat state ↔ raw RRULE string.
-// Moved from the web EventEditor so web and mobile share ONE mapping; rules
+// Moved out of the web EventEditor so there is ONE mapping; rules
 // outside this vocabulary parse to 'custom' and must round-trip verbatim
 // while the editor's repeat control is untouched (the dirty-flag contract).
 // ---------------------------------------------------------------------------

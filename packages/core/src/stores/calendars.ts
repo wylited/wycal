@@ -203,7 +203,7 @@ export async function setCollectionColor(collection: DavCollection, hex: string)
 }
 
 // ---------------------------------------------------------------------------
-// Offline snapshot (CONTRACTS §36 mobile boot)
+// Offline snapshot (CONTRACTS §36 offline boot)
 // ---------------------------------------------------------------------------
 
 function isDavCollection(v: unknown): v is DavCollection {

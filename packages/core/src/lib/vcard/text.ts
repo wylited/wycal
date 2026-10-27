@@ -23,6 +23,30 @@ export function splitUnescaped(value: string, sep: string): string[] {
   return parts;
 }
 
+/** Escape a TEXT-ish value: `\` → `\\`, then `;` `,`, then newlines → `\n`. */
+export function escapeText(value: string): string {
+  return value
+    .replace(/\\/g, '\\\\')
+    .replace(/;/g, '\\;')
+    .replace(/,/g, '\\,')
+    .replace(/\r\n|\r|\n/g, '\\n');
+}
+
+/** Unescape a TEXT-ish value: `\\ \; \, \n \N`; unknown escapes lose the backslash. */
+export function unescapeText(value: string): string {
+  let out = '';
+  for (let i = 0; i < value.length; i++) {
+    const ch = value[i];
+    if (ch !== '\\' || i + 1 >= value.length) {
+      out += ch;
+      continue;
+    }
+    const next = value[++i];
+    out += next === 'n' || next === 'N' ? '\n' : next;
+  }
+  return out;
+}
+
 /** FN fallback: display form of N, else ORG. */
 export function deriveFn(names: Vcard['names'], org?: string): string {
   if (names) {

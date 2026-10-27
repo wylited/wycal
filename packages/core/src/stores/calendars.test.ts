@@ -1,7 +1,7 @@
 /**
  * Calendar visibility tests (CONTRACTS §34): the schedule and agenda domains
- * keep INDEPENDENT membership, persisted under separate keys. The mobile
- * schedule tab feeds from 'schedule' and the agenda tab from 'agenda'
+ * keep INDEPENDENT membership, persisted under separate keys. The schedule
+ * view feeds from 'schedule' and the agenda view from 'agenda'
  * (CONTRACTS §38), so a regression here silently couples the two surfaces.
  */
 import { afterAll, expect, test } from 'bun:test'

@@ -107,8 +107,8 @@ export function fmtWeekday(d: Date): string {
 }
 
 /**
- * Human range for an event, shared by the detail popover, search rows and the
- * mobile sheets: `Wed, Oct 9 · 14:00 – 15:30`, cross-day
+ * Human range for an event, shared by the detail popover and search rows:
+ * `Wed, Oct 9 · 14:00 – 15:30`, cross-day
  * `Wed, Oct 9 14:00 – Thu, Oct 10 09:00`, all-day `Wed, Oct 9` /
  * `Wed, Oct 9 – Fri, Oct 11`. ICS DTEND is exclusive, so the displayed
  * all-day end steps back one day.

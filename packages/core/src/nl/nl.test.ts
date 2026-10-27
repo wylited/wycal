@@ -242,8 +242,13 @@ describe('interpret — recurrence first occurrence', () => {
   })
 
   it('today matching the BYDAY keeps today', () => {
+    const r = interpret('gym every Wednesday 10am')
+    expect(r.when?.getTime()).toBe(new Date(2026, 9, 14, 10, 0).getTime())
+  })
+
+  it('a BYDAY time already passed today rolls to next week', () => {
     const r = interpret('gym every Wednesday 7am')
-    expect(r.when?.getTime()).toBe(new Date(2026, 9, 14, 7, 0).getTime())
+    expect(r.when?.getTime()).toBe(new Date(2026, 9, 21, 7, 0).getTime())
   })
 
   it('an explicitly typed date wins over the roll', () => {
@@ -278,5 +283,76 @@ describe('interpret — contact tel extraction', () => {
   it('a date-shaped trailing run is never a phone', () => {
     const r = interpret('Party 2026-10-14')
     expect(r.contact).toBeUndefined()
+  })
+})
+
+describe('interpret — colonless todo/task prefix', () => {
+  it('todo lunch noon stays a TODO — the time does not flip it to an event', () => {
+    const r = interpret('todo lunch noon')
+    expect(r.kind).toBe('todo')
+    expect(r.title).toBe('lunch')
+    expect(r.when?.getTime()).toBe(new Date(2026, 9, 14, 12, 0).getTime())
+  })
+  it('todo gym every monday → a recurring todo, not an all-day weekly VEVENT', () => {
+    const r = interpret('todo gym every monday')
+    expect(r.kind).toBe('todo')
+    expect(r.title).toBe('gym')
+    expect(r.rrule).toBe('FREQ=WEEKLY;BYDAY=MO')
+  })
+  it('task without a colon pins todo too', () => {
+    expect(interpret('task water plants 3pm').kind).toBe('todo')
+  })
+})
+
+describe('interpret — ISO dates', () => {
+  it('flight 2026-11-03 06:40 → event Nov 3 06:40', () => {
+    const r = interpret('flight 2026-11-03 06:40')
+    expect(r.kind).toBe('event')
+    expect(r.title).toBe('flight')
+    expect(r.when?.getTime()).toBe(new Date(2026, 10, 3, 6, 40).getTime())
+  })
+  it("'due' consumes before an ISO date ('report due 2026-11-03')", () => {
+    const r = interpret('report due 2026-11-03')
+    expect(r.kind).toBe('todo')
+    expect(r.title).toBe('report')
+    expect(r.due?.getTime()).toBe(new Date(2026, 10, 3).getTime())
+  })
+})
+
+describe('interpret — event #priority honesty', () => {
+  it('standup #A fri 10am → event with #A kept in the title, no priority chip', () => {
+    const r = interpret('standup #A fri 10am')
+    expect(r.kind).toBe('event')
+    expect(r.title).toBe('standup #A')
+    expect(r.priority).toBeUndefined()
+    expect(r.chips.some((c) => c.kind === 'priority')).toBe(false)
+  })
+  it('a recurrence-flipped line re-parses too (gym mondays #A)', () => {
+    const r = interpret('gym mondays #A')
+    expect(r.kind).toBe('event')
+    expect(r.title).toBe('gym #A')
+    expect(r.priority).toBeUndefined()
+  })
+  it('todos keep the priority parse (todo: gym #A)', () => {
+    const r = interpret('todo: gym #A')
+    expect(r.kind).toBe('todo')
+    expect(r.title).toBe('gym')
+    expect(r.priority).toBe(1)
+  })
+})
+
+describe('interpret — past same-day roll', () => {
+  it('lunch noon typed at 17:52 → tomorrow noon; todo dues roll too', () => {
+    setSystemTime(new Date(2026, 9, 14, 17, 52))
+    try {
+      const ev = interpret('lunch noon')
+      expect(ev.kind).toBe('event')
+      expect(ev.when?.getTime()).toBe(new Date(2026, 9, 15, 12, 0).getTime())
+      const todo = interpret('todo lunch noon')
+      expect(todo.kind).toBe('todo')
+      expect(todo.when?.getTime()).toBe(new Date(2026, 9, 15, 12, 0).getTime())
+    } finally {
+      setSystemTime(new Date(2026, 9, 14, 9, 0, 0))
+    }
   })
 })

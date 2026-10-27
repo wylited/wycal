@@ -34,7 +34,7 @@
  * palette highlights every consumed fragment in place. Pure module: no
  * store imports.
  */
-import { parseQuickAddLine } from './quickAdd'
+import { FORCED_PREFIX, parseQuickAddLine } from './quickAdd'
 import type { ParsedChip } from './quickAdd'
 
 /** Human hint for a parsed due (todo preview lines) — re-exported so the
@@ -326,6 +326,7 @@ function dateHeaded(ws: Word[], i: number): boolean {
   if (WEEKDAY_NO[t] !== undefined || MONTH_SPELLINGS[t] === true) return true
   if (/^\d/.test(t)) {
     if (/^\d{1,2}\/\d{1,2}$/.test(t) || /^\d{1,2}(?:st|nd|rd|th)$/.test(t)) return true
+    if (/^\d{4}[-/]\d{1,2}[-/]\d{1,2}$/.test(t)) return true // ISO date ('2026-11-03')
     return /^\d{1,2}$/.test(t) && MONTH_SPELLINGS[bareWord(ws[i + 1])] === true
   }
   if (t === 'in') return /^\d/.test(bareWord(ws[i + 1]))
@@ -506,13 +507,37 @@ export function interpret(input: string): Interpretation {
     chips.push({ start: loc.start, end: loc.end, text: input.slice(loc.start, loc.end), kind: 'location' })
   }
 
-  const base = parseQuickAddLine(padded)
+  let base = parseQuickAddLine(padded)
+  // Default kind: an EVENT as soon as any event-shaped signal parsed — a
+  // clock time, a duration, a recurrence, a location, or an explicit
+  // 'all day'. Only a bare line (or a date-only one, whose date reads as the
+  // todo's due) stays a TODO: 'buy milk' and 'meet tomorrow' are dated
+  // tasks, 'meet at 3pm' is an event. A forced prefix pins the kind ahead
+  // of this rule — quickAdd's exact FORCED_PREFIX grammar, so the colonless
+  // 'todo lunch noon'/'todo gym every monday' stay TASKS instead of letting
+  // the time/recurrence event signals win.
+  const forcedKind = FORCED_PREFIX.test(input)
+  const eventShaped =
+    (base.dueOrStart !== undefined && !base.allDay) || // clock time
+    base.durationMinutes !== undefined ||
+    rec !== undefined ||
+    loc !== undefined ||
+    ad !== undefined
+  const kind: InterpKind = forcedKind ? base.kind : eventShaped ? 'event' : base.kind
+  // Event # honesty: the palette's VEVENT carries no PRIORITY, and a kind
+  // pinned here (not inside the line pass) must re-parse too — 'gym mondays
+  // #A' is a base-'todo' line the recurrence flipped to event. Only the #
+  // handling differs between the passes, so the due/duration survive.
+  if (kind === 'event' && base.priority !== undefined) {
+    base = parseQuickAddLine(padded, true)
+  }
   // Recurrence first occurrence: with a BYDAY rule and no explicitly typed
-  // date, the base pass anchors the wall time to today — 'gym every monday
-  // 7am' typed on a Wednesday previews Oct 14 while the saved series (RRULE
-  // expansion from the DTSTART) starts Mon Oct 19. Roll the start forward to
-  // the first BYDAY weekday (today counts, matching inclusive expansion) so
-  // the palette preview, chips and the saved DTSTART agree. Non-BYDAY rules
+  // date, the base pass anchors the wall time to today (or tomorrow, past
+  // the same-day roll) — 'gym every monday 7am' typed on a Wednesday
+  // previews Oct 14 while the saved series (RRULE expansion from the
+  // DTSTART) starts Mon Oct 19. Roll the start forward to the first BYDAY
+  // weekday (today counts, matching inclusive expansion) so the palette
+  // preview, chips and the saved DTSTART agree. Non-BYDAY rules
   // (daily/monthly/yearly) and explicit date tokens keep the base date.
   if (rec !== undefined && base.dueOrStart !== undefined && !base.allDay) {
     const byday = /BYDAY=([A-Z,]+)/.exec(rec.rrule)
@@ -538,21 +563,6 @@ export function interpret(input: string): Interpretation {
   for (const c of base.chips) chips.push(c)
   chips.sort((a, b) => a.start - b.start || a.end - b.end)
 
-  // Default kind: an EVENT as soon as any event-shaped signal parsed — a
-  // clock time, a duration, a recurrence, a location, or an explicit
-  // 'all day'. Only a bare line (or a date-only one, whose date reads as the
-  // todo's due) stays a TODO: 'buy milk' and 'meet tomorrow' are dated
-  // tasks, 'meet at 3pm' is an event. A forced 'todo:'/'event:'/'meet:'
-  // prefix (same grammar as quickAdd's FORCED_PREFIX) pins the kind ahead
-  // of this rule.
-  const forcedKind = /^\s*(?:todo|task|event|meet|meeting)\s*:/i.test(input)
-  const eventShaped =
-    (base.dueOrStart !== undefined && !base.allDay) || // clock time
-    base.durationMinutes !== undefined ||
-    rec !== undefined ||
-    loc !== undefined ||
-    ad !== undefined
-  const kind: InterpKind = forcedKind ? base.kind : eventShaped ? 'event' : base.kind
   const allDay = ad !== undefined || base.allDay
 
   const confidence: Interpretation['confidence'] =

@@ -6,7 +6,7 @@
 // REV is refreshed to "now" on every write; unknown properties kept in
 // `raw` are re-emitted verbatim.
 
-import { deriveFn, splitUnescaped } from './text';
+import { deriveFn, escapeText, splitUnescaped, unescapeText } from './text';
 import type { Vcard } from './types';
 
 const FOLD_LIMIT = 75; // RFC 6350 §3.2: content lines SHOULD be ≤ 75 octets
@@ -14,15 +14,6 @@ const ADR_COMPONENTS = 7; // pobox;extended;street;locality;region;postal;countr
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
-
-/** Escape a TEXT-ish value: `\` → `\\`, then `;` `,`, then newlines → `\n`. */
-function escapeText(value: string): string {
-  return value
-    .replace(/\\/g, '\\\\')
-    .replace(/;/g, '\\;')
-    .replace(/,/g, '\\,')
-    .replace(/\r\n|\r|\n/g, '\\n');
-}
 
 /** Fold one content line at FOLD_LIMIT octets without splitting UTF-8 characters. */
 function foldLine(line: string): string {
@@ -59,12 +50,24 @@ function typedProp(name: string, entry: { value: string; types: string[] }): str
   return `${name}${params}:${escapeText(entry.value)}`;
 }
 
-/** ADR property: the flat `value` is split back into 7 components and re-escaped. */
+/**
+ * ADR property: escape-aware split into exactly 7 re-escaped components.
+ * The flat `value` may carry `\;`/`\\` escapes (the editor writes them so a
+ * street containing `;` stays one component); they are honored on the split
+ * and re-escaped on output, so a no-touch editor round trip is byte-equal.
+ * A legacy overlong value (>7 components after the split — a `;`-containing
+ * street from a card the parser decoded) folds its overflow into the country
+ * slot joined with `'; '`, so no component is ever dropped.
+ */
 function adrProp(entry: { value: string; types: string[] }): string {
-  const parts = splitUnescaped(entry.value, ';');
+  const parts = splitUnescaped(entry.value, ';').map(unescapeText);
   while (parts.length < ADR_COMPONENTS) parts.push('');
+  if (parts.length > ADR_COMPONENTS) {
+    parts[ADR_COMPONENTS - 1] = parts.slice(ADR_COMPONENTS - 1).join('; ');
+    parts.length = ADR_COMPONENTS;
+  }
   const params = entry.types.length > 0 ? `;TYPE=${entry.types.map(escapeText).join(',')}` : '';
-  return `ADR${params}:${parts.slice(0, ADR_COMPONENTS).map(escapeText).join(';')}`;
+  return `ADR${params}:${parts.map(escapeText).join(';')}`;
 }
 
 /** PHOTO property. Data URIs carry VALUE=uri + MEDIATYPE, mirroring Radicale's form. */

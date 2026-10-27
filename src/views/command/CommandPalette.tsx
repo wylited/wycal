@@ -923,7 +923,9 @@ function PreviewCard(props: { entry: Entry; interp: Interpretation; createKind: 
               ...(p.durationMin !== undefined && !p.allDay ? ([['Duration', fmtMinutes(p.durationMin)]] as [string, string][]) : []),
               ...(p.rrule !== undefined ? ([['Repeats', describeRrule(p.rrule)]] as [string, string][]) : []),
               ...(p.location !== undefined ? ([['Where', p.location]] as [string, string][]) : []),
-              ...(p.priority !== undefined ? ([['Priority', `#${prioLetter(p.priority)}`]] as [string, string][]) : []),
+              // No Priority row: the created VEVENT carries no PRIORITY —
+              // same honesty rule as the quick-add dialog ('#A' stays in the
+              // event title; only VTODOs consume priority).
             ]}
           />
           <PreviewTags tags={p.tags} />

@@ -1,14 +1,21 @@
 // Natural-language quick-add parser tests (CONTRACTS §15/§16 Q): decimal
 // durations, long durations (up to 99h), time ranges, noon/midnight, bare
 // 'at N' hours, bare ordinal dates, 'next week', 'all day', 'yesterday',
-// capitalized weekdays, colon-less todo/task prefixes and '#tag'
-// tokens — plus the pre-existing token behaviors they must not disturb. All
-// assertions are system-date independent: expected dates are built through
-// the same local-midnight conventions the implementation uses (day offsets
-// from today, weekday wrap, this-or-next-month ordinals).
-import { describe, expect, it } from 'bun:test'
+// capitalized weekdays, colon-less todo/task prefixes, '#tag' tokens, ISO
+// dates, the past same-day roll and event-# honesty — plus the
+// pre-existing token behaviors they must not disturb. The clock is pinned
+// once below (same instant as nl.test.ts): the past same-day roll compares
+// parsed wall times against `now`, so expectations are deterministic.
+// Expected dates are built through the same local-midnight conventions the
+// implementation uses (day offsets from today, weekday wrap,
+// this-or-next-month ordinals) — all relative to that pin.
+import { afterEach, beforeEach, describe, expect, it, setSystemTime } from 'bun:test'
 import { describeDue, parseQuickAdd, parseQuickAddLine } from './quickAdd'
 import type { ParsedQuickAddLine } from './quickAdd'
+
+/** The frozen instant every relative helper resolves against. */
+const PINNED_NOW = new Date(2026, 9, 14, 9, 0, 0) // Wed Oct 14 2026, 09:00 local
+setSystemTime(PINNED_NOW)
 
 const today = (): Date => {
   const n = new Date()
@@ -133,9 +140,9 @@ describe('noon and midnight', () => {
     expect(r.dueOrStart?.allDay).toBe(false)
     expect(r.dueOrStart?.text).toBe('at noon')
   })
-  it('midnight → 00:00 timed', () => {
+  it('midnight → tomorrow 00:00 (00:00 already passed the pinned 09:00)', () => {
     const r = line('party at midnight')
-    expect(r.dueOrStart?.date.getTime()).toBe(at(today(), 0).getTime())
+    expect(r.dueOrStart?.date.getTime()).toBe(at(day(1), 0).getTime())
     expect(r.dueOrStart?.allDay).toBe(false)
   })
   it('merges into a parsed date (fri noon)', () => {
@@ -152,9 +159,9 @@ describe('bare hour after at', () => {
     expect(r.dueOrStart?.date.getTime()).toBe(at(today(), 17).getTime())
     expect(r.dueOrStart?.text).toBe('at 5')
   })
-  it('call at 8 → 08:00 (7–11 → am)', () => {
+  it('call at 8 → 08:00 (7–11 → am; 08:00 passed the pinned 09:00 → rolls)', () => {
     const r = line('call at 8')
-    expect(r.dueOrStart?.date.getTime()).toBe(at(today(), 8).getTime())
+    expect(r.dueOrStart?.date.getTime()).toBe(at(day(1), 8).getTime())
   })
   it('at 12 → 12:00 (12 → pm)', () => {
     const r = line('lunch at 12')
@@ -286,6 +293,12 @@ describe('forced-kind prefixes', () => {
     expect(r.kind).toBe('event')
     expect(r.summary).toBe('standup')
   })
+  it('todo lunch noon stays a TODO despite the parsed time', () => {
+    const r = line('todo lunch noon')
+    expect(r.kind).toBe('todo')
+    expect(r.summary).toBe('lunch')
+    expect(r.dueOrStart?.date.getTime()).toBe(at(today(), 12).getTime())
+  })
 })
 
 describe('tags and priority', () => {
@@ -367,6 +380,9 @@ describe('chips report caller-input spans', () => {
   it('describeDue renders the parsed hint', () => {
     expect(describeDue({ date: day(0), allDay: true })).toMatch(/^[A-Z][a-z]{2} [A-Z][a-z]{2} \d{1,2}$/)
     expect(describeDue({ date: at(today(), 17), allDay: false })).toMatch(/ · 5:00pm$/)
+    // hour12: false → 24h clock (the preview mirrors the pref), zero-padded.
+    expect(describeDue({ date: at(today(), 17), allDay: false }, false)).toMatch(/ · 17:00$/)
+    expect(describeDue({ date: at(today(), 9, 5), allDay: false }, false)).toMatch(/ · 09:05$/)
   })
 })
 
@@ -425,5 +441,105 @@ describe('capitalized weekdays', () => {
     const r = line('plan Next Monday')
     expect(r.summary).toBe('plan')
     expect(r.dueOrStart?.date.getTime()).toBe(nextMonday().getTime())
+  })
+})
+
+describe('ISO dates', () => {
+  it('flight 2026-11-03 06:40 → timed Nov 3, date stripped from the title', () => {
+    const r = line('flight 2026-11-03 06:40')
+    expect(r.kind).toBe('event')
+    expect(r.summary).toBe('flight')
+    expect(r.dueOrStart?.date.getTime()).toBe(new Date(2026, 10, 3, 6, 40).getTime())
+    expect(r.dueOrStart?.allDay).toBe(false)
+  })
+  it('slash form 2026/11/03 anchors all-day', () => {
+    const r = line('trip 2026/11/03')
+    expect(r.summary).toBe('trip')
+    expect(r.dueOrStart?.date.getTime()).toBe(new Date(2026, 10, 3).getTime())
+    expect(r.dueOrStart?.allDay).toBe(true)
+    expect(r.kind).toBe('todo') // date-only line, per the existing inference
+  })
+  it('a leading date is consumed too (2026-11-03 flight)', () => {
+    const r = line('2026-11-03 flight')
+    expect(r.summary).toBe('flight')
+    expect(r.dueOrStart?.date.getTime()).toBe(new Date(2026, 10, 3).getTime())
+  })
+  it('the 4-digit year is honored, not this-year anchored', () => {
+    expect(line('x 2027-01-05').dueOrStart?.date.getTime()).toBe(new Date(2027, 0, 5).getTime())
+  })
+  it('impossible ISO dates stay text', () => {
+    const r = line('x 2026-02-31')
+    expect(r.summary).toBe('x 2026-02-31')
+    expect(r.dueOrStart).toBeUndefined()
+  })
+  it('the date is one chip in input coordinates, the time its own', () => {
+    expect(chipSpans('flight 2026-11-03 06:40')).toEqual(['2026-11-03', '06:40'])
+  })
+  it('the todo pass (TasksView) consumes it too', () => {
+    const r = parseQuickAdd('pay 2026-12-01')
+    expect(r.summary).toBe('pay')
+    expect(r.due?.date.getTime()).toBe(new Date(2026, 11, 1).getTime())
+    expect(r.due?.allDay).toBe(true)
+  })
+})
+
+describe('past same-day roll', () => {
+  // The file pin is 09:00; the roll needs a late-afternoon 'now'.
+  beforeEach(() => setSystemTime(new Date(2026, 9, 14, 17, 52)))
+  afterEach(() => setSystemTime(PINNED_NOW))
+
+  it('lunch noon typed at 17:52 → tomorrow 12:00', () => {
+    const r = line('lunch noon')
+    expect(r.kind).toBe('event')
+    expect(r.summary).toBe('lunch')
+    expect(r.dueOrStart?.date.getTime()).toBe(at(day(1), 12).getTime())
+    expect(r.dueOrStart?.allDay).toBe(false)
+  })
+  it('a bare 24h time rolls too (sync 9:00)', () => {
+    expect(line('sync 9:00').dueOrStart?.date.getTime()).toBe(at(day(1), 9).getTime())
+  })
+  it('the todo pass rolls dues identically', () => {
+    const r = parseQuickAdd('lunch noon')
+    expect(r.due?.date.getTime()).toBe(at(day(1), 12).getTime())
+  })
+  it('an explicit date is honored, never rolled', () => {
+    expect(line('lunch today noon').dueOrStart?.date.getTime()).toBe(at(today(), 12).getTime())
+    expect(line('blast yesterday 3pm').dueOrStart?.date.getTime()).toBe(at(day(-1), 15).getTime())
+  })
+  it('a time exactly at now stays today (strictly earlier only)', () => {
+    expect(line('x 5:52pm').dueOrStart?.date.getTime()).toBe(at(today(), 17, 52).getTime())
+  })
+  it('all-day dues never roll', () => {
+    expect(line('x all day').dueOrStart).toBeUndefined()
+    expect(line('offsite today all day').dueOrStart?.date.getTime()).toBe(at(today(), 0).getTime())
+  })
+})
+
+describe('event #tag honesty', () => {
+  it("standup #A fri 10am → '#A' stays title text, no priority chip", () => {
+    const r = line('standup #A fri 10am')
+    expect(r.kind).toBe('event')
+    expect(r.summary).toBe('standup #A')
+    expect(r.priority).toBeUndefined()
+    expect(r.chips.some((c) => c.kind === 'priority')).toBe(false)
+    expect(r.dueOrStart?.date.getTime()).toBe(at(upcoming(5), 10).getTime())
+  })
+  it('word tags still parse for events (they land in CATEGORIES)', () => {
+    const r = line('errands #errands 3pm')
+    expect(r.kind).toBe('event')
+    expect(r.summary).toBe('errands')
+    expect(r.tags).toEqual(['errands'])
+  })
+  it('forced event prefixes keep #A as text too', () => {
+    const r = line('event: board #B')
+    expect(r.kind).toBe('event')
+    expect(r.summary).toBe('board #B')
+    expect(r.priority).toBeUndefined()
+  })
+  it('todos keep the priority parse (unchanged)', () => {
+    const r = line('Milk tomorrow #A')
+    expect(r.kind).toBe('todo')
+    expect(r.priority).toBe(1)
+    expect(r.summary).toBe('Milk')
   })
 })

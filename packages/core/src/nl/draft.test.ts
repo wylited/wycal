@@ -1,10 +1,11 @@
 // Quick-add draft builder tests (CONTRACTS §16 Q): the shared
-// interpretation → record mapping behind the web dialog and the mobile
-// sheet. All assertions are system-date independent — expected dates are
-// built through the same local-midnight conventions the parser uses (day
-// offsets from today, weekday wrap), and IcsDate forms through the same
-// lib/ics/types helpers the builders call.
-import { describe, expect, it } from 'bun:test'
+// interpretation → record mapping behind the quick-add dialog.
+// The clock is pinned once below (same instant as nl.test.ts): the
+// parser's past same-day roll compares parsed wall times against `now`.
+// Expected dates are built through the same local-midnight conventions the
+// parser uses (day offsets from today, weekday wrap), and IcsDate forms
+// through the same lib/ics/types helpers the builders call.
+import { describe, expect, it, setSystemTime } from 'bun:test'
 import { floatingWallIso, toIcsDateInput } from '../lib/ics/types'
 import { interpret } from './nl'
 import { parseQuickAddLine } from './quickAdd'
@@ -18,6 +19,8 @@ import {
   planEventDraft,
   todoFromInterpretation,
 } from './draft'
+
+setSystemTime(new Date(2026, 9, 14, 9, 0, 0)) // Wed Oct 14 2026, 09:00 local
 
 const today = (): Date => {
   const n = new Date()
@@ -112,6 +115,18 @@ describe('todoFromInterpretation', () => {
   it('no parsed date → no due', () => {
     const todo = todoFromInterpretation(interpret('todo: call mom'))
     expect(todo.due).toBeUndefined()
+  })
+
+  it('recurring input passes the RRULE through to the VTODO (every monday → weekly)', () => {
+    const todo = todoFromInterpretation(interpret('todo gym every monday'), { uid: 't4' })
+    expect(todo.uid).toBe('t4')
+    expect(todo.rrule).toBe('FREQ=WEEKLY;BYDAY=MO')
+  })
+
+  it('a dated recurring todo keeps the all-day due beside the rule (the anchor form the serializer keys UNTIL off)', () => {
+    const todo = todoFromInterpretation(interpret('todo: report due friday weekly'))
+    expect(todo.rrule).toBe('FREQ=WEEKLY')
+    expect(todo.due).toEqual(toIcsDateInput(upcoming(5), true))
   })
 })
 

@@ -1,7 +1,7 @@
 /**
  * Quick-add draft builders — the ONE interpretation → record mapping shared
- * by the web dialog (views/quickadd/QuickAddDialog.tsx) and the mobile sheet
- * (components/quickadd/QuickAddSheet.tsx). The builders carry the dialog's
+ * by the quick-add dialog (src/views/quickadd/QuickAddDialog.tsx). The
+ * builders carry the dialog's
  * exact §16 Q semantics: uid generation, DTSTART from when/due, DTEND from
  * durationMin or the 60m default, VALUE=DATE for all-day, floating wall time
  * for timed saves (floatingWallIso — a toIcsDateInput floating form reads
@@ -209,7 +209,9 @@ export function eventFromInterpretation(interp: Interpretation, opts: DraftOpts 
 }
 
 /** The todo a quick-add interpretation creates (status NEEDS-ACTION, due in
- *  the dialog's exact forms, PRIORITY passthrough). */
+ *  the dialog's exact forms, PRIORITY and RRULE passthrough — the raw rule
+ *  on IcsTodo.rrule, the same field parse/serialize round-trip; the
+ *  serializer's UNTIL form anchors on due, else dtstart). */
 export function todoFromInterpretation(interp: Interpretation, opts: DraftOpts = {}): IcsTodo {
   return {
     uid: opts.uid ?? newUid(),
@@ -218,6 +220,7 @@ export function todoFromInterpretation(interp: Interpretation, opts: DraftOpts =
     categories: interp.tags,
     priority: interp.priority,
     due: todoDueFromInterpretation(interp),
+    rrule: interp.rrule,
     exdates: [],
     alarms: [],
   }

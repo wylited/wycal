@@ -7,7 +7,7 @@
 //   `PHOTO;VALUE=uri;MEDIATYPE=image/png:data:image/png\;base64\,iVBORw0…`
 // Unfolding + unescaping recovers the exact `data:image/png;base64,…` string.
 
-import { deriveFn, splitUnescaped } from './text';
+import { deriveFn, splitUnescaped, unescapeText } from './text';
 import type { Vcard } from './types';
 
 /** One parsed content line: `[group.]NAME;PARAM=value:value`. */
@@ -59,21 +59,6 @@ function unfold(text: string): string[] {
     b64Value = prop !== null && (prop.name === 'PHOTO' || encoding.includes('base64') || encoding === 'b');
   }
   return lines;
-}
-
-/** Unescape a TEXT-ish value: `\\ \; \, \n \N`; unknown escapes lose the backslash. */
-function unescapeText(value: string): string {
-  let out = '';
-  for (let i = 0; i < value.length; i++) {
-    const ch = value[i];
-    if (ch !== '\\' || i + 1 >= value.length) {
-      out += ch;
-      continue;
-    }
-    const next = value[++i];
-    out += next === 'n' || next === 'N' ? '\n' : next;
-  }
-  return out;
 }
 
 const utf8Decoder = new TextDecoder();

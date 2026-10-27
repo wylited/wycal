@@ -24,7 +24,9 @@
  * | oct 24 / 24 oct (+ordinals)| that calendar date this year (all-day)         |
  * | 31st / 3rd …               | that day of this month (next month when past,  |
  * |                            | all-day)                                       |
- * | 10/24                      | month/day this year (all-day)                  |
+ * | 10/24                      | month/day this year (all-day)                |
+ * | 2026-11-03 / 2026/11/03    | that ISO calendar date (all-day anchor, the  |
+ * |                            | 4-digit year honored — not this-year)        |
  * | at 5pm / 5pm / 5:30pm      | wall time merged into the matched date (today  |
  * | 17:00 / at 17:00           | when none) → timed due                         |
  * | 3pm to 4pm / 14:00-15:30   | time range: the start becomes the due/start    |
@@ -42,8 +44,15 @@
  *
  * Later matches of the same kind override earlier ones ('fri 10/24' → Oct 24);
  * a second date token replaces the first, a second time token replaces the
- * first time. Impossible dates ('feb 30', '13/45', '25pm') are left in the
- * summary untouched.
+ * first time. Impossible dates ('feb 30', '13/45', '25pm', '2026-02-31') are
+ * left in the summary untouched.
+ *
+ * A wall time with NO explicit date that lands earlier today rolls to
+ * tomorrow, same time ('lunch noon' typed at 17:52 → tomorrow 12:00) — todo
+ * dues roll identically; explicitly dated times ('yesterday 3pm', 'today
+ * noon') and all-day dues are honored as typed. On the line pass, an EVENT
+ * keeps '#A'/'#B'/'#C' in the summary as text (IcsEvent has no PRIORITY);
+ * todos keep parsing them into `priority`.
  *
  * `parseQuickAddLine` wraps the same token pass for the global quick-add
  * dialog (CONTRACTS §16 Q): a leading `todo`/`task` prefix (colon optional:
@@ -123,15 +132,18 @@ const WEEKDAYS: Record<string, number> = {
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
-/** Human hint for a parsed due: 'Fri Oct 16', + ' · 5:00pm' when timed. */
-export function describeDue(due: { date: Date; allDay: boolean }): string {
+/** Human hint for a parsed due: 'Fri Oct 16', + ' · 5:00pm' when timed —
+ *  or '· 17:00' with `hour12: false`, mirroring the preview's clock pref. */
+export function describeDue(due: { date: Date; allDay: boolean }, hour12 = true): string {
   const d = due.date
   const label = `${DAY_NAMES[d.getDay()]} ${MONTH_NAMES[d.getMonth()]} ${d.getDate()}`
   if (due.allDay) return label
   const h24 = d.getHours()
+  const mm = String(d.getMinutes()).padStart(2, '0')
+  if (!hour12) return `${label} · ${String(h24).padStart(2, '0')}:${mm}`
   const h12 = h24 % 12 === 0 ? 12 : h24 % 12
   const ampm = h24 < 12 ? 'am' : 'pm'
-  return `${label} · ${h12}:${String(d.getMinutes()).padStart(2, '0')}${ampm}`
+  return `${label} · ${h12}:${mm}${ampm}`
 }
 
 /** Weekday due: plain = next occurrence (today counts); 'next X' = one week
@@ -158,7 +170,10 @@ export function parseQuickAdd(input: string): ParsedQuickAdd {
 
 /** Internal token pass behind parseQuickAdd/parseQuickAddLine; `durations`
  *  additionally strips duration tokens (quick-add-line only, so the TasksView
- *  todo quick-add keeps '30m' as summary text — TODOs have no duration). */
+ *  todo quick-add keeps '30m' as summary text — TODOs have no duration).
+ *  `keepHashPriority` leaves '#A'/'#B'/'#C' in the summary as plain text —
+ *  the event pass: IcsEvent has no PRIORITY, so a consumed '#A' would
+ *  preview a priority chip the created VEVENT silently drops. */
 interface TokenPass {
   summary: string
   due?: QuickAddDue
@@ -171,7 +186,7 @@ interface TokenPass {
   chips: ParsedChip[]
 }
 
-function parseTokens(input: string, durations: boolean, skip = 0): TokenPass {
+function parseTokens(input: string, durations: boolean, skip = 0, keepHashPriority = false): TokenPass {
   // A forced-kind prefix (skip > 0) is blanked rather than sliced away so
   // every chip offset below stays valid against the caller's full input.
   let summary = skip > 0 ? ' '.repeat(skip) + input.slice(skip) : input
@@ -241,6 +256,17 @@ function parseTokens(input: string, durations: boolean, skip = 0): TokenPass {
     return true
   }
 
+  /** ISO calendar date ('2026-11-03', '2026/11/03'): unlike onDate the
+   *  4-digit year is honored rather than anchored to the current one;
+   *  impossible dates (2026-02-31) rejected the same round-trip way. */
+  function onISODate(year: number, month: number, day: number, text: string): boolean {
+    const date = new Date(year, month - 1, day)
+    if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return false
+    dateText = text
+    due = { text, date, allDay: true }
+    return true
+  }
+
   /** Bare ordinal day ('31st', '3rd'): that day of the current month, next
    *  month when already past; impossible days (Feb 31, and days the next
    *  month does not have either) rejected. */
@@ -305,11 +331,14 @@ function parseTokens(input: string, durations: boolean, skip = 0): TokenPass {
   }
 
   // Priority: '#A'/'#B'/'#C' and the '!p1'/'!p2'/'!p3' aliases (last wins).
-  strip(/\B#([abc])\b/gi, (m) => {
-    const letter = (m[1] as string).toLowerCase()
-    priority = letter === 'a' ? 1 : letter === 'b' ? 5 : 9
-    return true
-  }, 'priority')
+  // The #-letter forms are skipped on the event pass (see parseTokens).
+  if (!keepHashPriority) {
+    strip(/\B#([abc])\b/gi, (m) => {
+      const letter = (m[1] as string).toLowerCase()
+      priority = letter === 'a' ? 1 : letter === 'b' ? 5 : 9
+      return true
+    }, 'priority')
+  }
   strip(/!p([123])\b/gi, (m) => {
     priority = m[1] === '1' ? 1 : m[1] === '2' ? 5 : 9
     return true
@@ -324,9 +353,11 @@ function parseTokens(input: string, durations: boolean, skip = 0): TokenPass {
 
   // '#tag' tokens → tags as well; the single letters are already gone (the
   // '#A'/'#B'/'#C' priority strip above consumed them) and a leading letter
-  // keeps '#1d' as text.
+  // keeps '#1d' as text. On the event pass the single a/b/c letters are
+  // rejected here too, so a kept '#A' can't slip in as a one-letter tag.
   strip(/\B#([A-Za-z][\w-]*)/g, (m) => {
     const tag = m[1] as string
+    if (keepHashPriority && /^[abc]$/i.test(tag)) return false
     if (!tags.includes(tag)) tags.push(tag)
     return true
   }, 'tag')
@@ -370,6 +401,15 @@ function parseTokens(input: string, durations: boolean, skip = 0): TokenPass {
       due = d
       return true
     },
+    'date',
+  )
+
+  // ISO dates ('2026-11-03', '2026/11/03') — run before the '10/24' strip,
+  // which would otherwise bite '11/03' out of the slashed form; the shared
+  // separator backreference keeps mixed '2026-11/03' out.
+  strip(
+    /\b(\d{4})([-/])(\d{1,2})\2(\d{1,2})\b/g,
+    (m) => onISODate(Number(m[1]), Number(m[3]), Number(m[4]), m[0] as string),
     'date',
   )
 
@@ -480,6 +520,19 @@ function parseTokens(input: string, durations: boolean, skip = 0): TokenPass {
     due.allDay = true
     timeText = ''
   }
+  // Past same-day roll: a wall time with no explicit date that lands EARLIER
+  // TODAY reads as a failed create ('lunch noon' typed at 17:52 renders
+  // behind the now-line) — roll the occurrence to tomorrow, same time. Todo
+  // dues roll identically (same parse). An explicitly typed date (including
+  // 'today') is always honored as typed, all-day dues never roll, and the
+  // boundary is strict: a time exactly at 'now' stays today.
+  if (due !== undefined && !due.allDay && dateText === '' && due.date.getTime() < Date.now()) {
+    const d = due.date
+    due = {
+      ...due,
+      date: new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1, d.getHours(), d.getMinutes()),
+    }
+  }
   if (due !== undefined) due.text = [dateText, timeText].filter((t) => t !== '').join(' ')
   // Collapse the gaps left by stripped tokens; tidy space-before-punctuation
   // and dangling edge separators.
@@ -495,8 +548,8 @@ function parseTokens(input: string, durations: boolean, skip = 0): TokenPass {
 /** Forced-kind prefixes: 'todo:'/'task:' → todo — the colon is optional since
  *  wave 15 ('todo call mom'); 'event:'/'meet:'/'meeting:' → event (colon still
  *  required, so 'event night' stays plain text). Case-insensitive, start of
- *  the trimmed line. */
-const FORCED_PREFIX = /^\s*(?:(todo|task)\b\s*:?|(event|meet|meeting)\b\s*:)/i
+ *  the trimmed line. Exported for interpret()'s same-grammar kind pin. */
+export const FORCED_PREFIX = /^\s*(?:(todo|task)\b\s*:?|(event|meet|meeting)\b\s*:)/i
 
 /**
  * Full-line parse for the global quick-add dialog (CONTRACTS §16 Q): the
@@ -506,8 +559,15 @@ const FORCED_PREFIX = /^\s*(?:(todo|task)\b\s*:?|(event|meet|meeting)\b\s*:)/i
  * +/#tags) behave exactly as in parseQuickAdd; the summary comes back with
  * every recognized token stripped, and `chips` records each consumed token's
  * span in the caller's input coordinates (command/nl.ts live preview).
+ *
+ * Event honesty: when the line resolves to an EVENT, '#A'/'#B'/'#C' are left
+ * in the summary as plain text (no priority chip) — IcsEvent has no PRIORITY,
+ * so consuming them would preview a field the created VEVENT silently drops.
+ * Word tags ('#work') stay consumed either way: events carry them as
+ * CATEGORIES. Callers that pin the kind themselves (interpret's overlay
+ * signals can flip a base-'todo' line to event) pass keepHashPriority=true.
  */
-export function parseQuickAddLine(input: string): ParsedQuickAddLine {
+export function parseQuickAddLine(input: string, keepHashPriority = false): ParsedQuickAddLine {
   let forced: QuickAddKind | undefined
   const m = FORCED_PREFIX.exec(input)
   if (m !== null) {
@@ -515,9 +575,17 @@ export function parseQuickAddLine(input: string): ParsedQuickAddLine {
   }
   // The forced prefix is blanked inside parseTokens (skip), so chip offsets
   // stay valid against the full input line.
-  const t = parseTokens(input, true, m === null ? 0 : m[0].length)
+  let t = parseTokens(input, true, m === null ? 0 : m[0].length, keepHashPriority)
+  let kind: QuickAddKind = forced ?? (t.hadTime || t.durationMinutes !== undefined ? 'event' : 'todo')
+  // A #-letter priority parsed on an EVENT line is re-parsed away: the token
+  // stays in the summary and its chip disappears (only the # handling
+  // differs between the passes, so the due/duration are unchanged).
+  if (kind === 'event' && !keepHashPriority && t.priority !== undefined) {
+    t = parseTokens(input, true, m === null ? 0 : m[0].length, true)
+    kind = forced ?? (t.hadTime || t.durationMinutes !== undefined ? 'event' : 'todo')
+  }
   return {
-    kind: forced ?? (t.hadTime || t.durationMinutes !== undefined ? 'event' : 'todo'),
+    kind,
     summary: t.summary,
     dueOrStart: t.due,
     durationMinutes: t.durationMinutes,

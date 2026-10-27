@@ -117,14 +117,12 @@ const STATUS_FILTER: Record<Exclude<AgendaFilterState['status'], 'all'>, IcsTodo
 }
 
 /**
- * Flatten + window + sort the agenda inputs. An event is placed at its start
- * instant (multi-day events appear once, at their first day — FullCalendar
- * list parity); items outside [today, today + range) are dropped.
+ * Sidebar chip gates shared by the window pass (collectAgendaItems) and the
+ * overdue pass (overdueTodoItems): status gates VTODO STATUS, priority gates
+ * PRIORITY bands (A=1–3, B=4–6, C=7–9), tags gate CATEGORIES as a superset
+ * match. Events answer to tags only; todos to all three.
  */
-export function collectAgendaItems(args: CollectAgendaArgs): AgendaItem[] {
-  const { today, windowDays, events, todos, calInfo, filters } = args
-  const startMs = today.getTime()
-  const endMs = addDays(today, windowDays).getTime()
+function agendaGates(filters: AgendaFilterState) {
   const wantStatus = filters.status === 'all' ? null : STATUS_FILTER[filters.status]
   const wantTags = filters.tags.length > 0
   // Superset match: every selected tag must appear in the item's CATEGORIES.
@@ -134,6 +132,26 @@ export function collectAgendaItems(args: CollectAgendaArgs): AgendaItem[] {
     if (p === undefined) return false
     return filters.priority === (p <= 3 ? 'A' : p <= 6 ? 'B' : 'C')
   }
+  const todoOk = (td: IcsTodo): boolean =>
+    (wantStatus === null || td.status === wantStatus) && bandOk(td.priority) && tagsOk(td.categories)
+  return { tagsOk, todoOk }
+}
+
+/** The todo's agenda placement instant (§15): its due, else its dtstart. */
+function todoWhen(td: IcsTodo): Date | null {
+  return td.due ? icsDateToDate(td.due) : td.dtstart ? icsDateToDate(td.dtstart) : null
+}
+
+/**
+ * Flatten + window + sort the agenda inputs. An event is placed at its start
+ * instant (multi-day events appear once, at its first day — FullCalendar
+ * list parity); items outside [today, today + range) are dropped.
+ */
+export function collectAgendaItems(args: CollectAgendaArgs): AgendaItem[] {
+  const { today, windowDays, events, todos, calInfo, filters } = args
+  const startMs = today.getTime()
+  const endMs = addDays(today, windowDays).getTime()
+  const { tagsOk, todoOk } = agendaGates(filters)
   const items: AgendaItem[] = []
   for (const rec of events) {
     const when = icsDateToDate(rec.data.start)
@@ -154,13 +172,54 @@ export function collectAgendaItems(args: CollectAgendaArgs): AgendaItem[] {
   // The todo's agenda placement instant is its due, else dtstart (§15); todos
   // ride the all-day lane in the FC list, so they stay allDay here too.
   for (const rec of todos) {
-    const when = rec.data.due ? icsDateToDate(rec.data.due) : rec.data.dtstart ? icsDateToDate(rec.data.dtstart) : null
+    const when = todoWhen(rec.data)
     if (!when) continue
     const t = when.getTime()
     if (t < startMs || t >= endMs) continue
-    if (wantStatus !== null && rec.data.status !== wantStatus) continue
-    if (!bandOk(rec.data.priority)) continue
-    if (!tagsOk(rec.data.categories)) continue
+    if (!todoOk(rec.data)) continue
+    const info = calInfo(rec.calendarUrl)
+    items.push({
+      kind: 'todo',
+      when,
+      day: dayKey(when),
+      allDay: true,
+      record: rec,
+      calendarName: info?.name,
+      color: info?.color,
+    })
+  }
+  return items.sort(compareItems)
+}
+
+export interface OverdueTodoArgs {
+  /** Local midnight of the first agenda day (the window anchor). */
+  today: Date
+  /** Todo records of visible calendars (visibility is the caller's gate). */
+  todos: readonly TodoRecord[]
+  /** Calendar attribution lookup (collections store read at the caller). */
+  calInfo: (calendarUrl: string) => AgendaCalInfo | undefined
+  /** Sidebar filter state (stores/agendaFilters signals, read at the caller). */
+  filters: AgendaFilterState
+}
+
+/**
+ * Open (not STATUS:COMPLETED) todos whose placement instant (due, else
+ * dtstart) is before start-of-today: the leading 'Overdue' group. The window
+ * pass still drops past items — future placement is unchanged — so this pass
+ * gathers exactly what the window cannot. Same row shape, same sidebar gates
+ * and the same shared ordering contract (oldest first); a completed past-due
+ * todo is not overdue, it is simply done.
+ */
+export function overdueTodoItems(args: OverdueTodoArgs): AgendaTodoItem[] {
+  const { today, todos, calInfo, filters } = args
+  const startMs = today.getTime()
+  const { todoOk } = agendaGates(filters)
+  const items: AgendaTodoItem[] = []
+  for (const rec of todos) {
+    const when = todoWhen(rec.data)
+    if (!when || when.getTime() >= startMs) continue
+    if (rec.data.status === 'COMPLETED') continue
+    if (!todoOk(rec.data)) continue
     const info = calInfo(rec.calendarUrl)
     items.push({
       kind: 'todo',

@@ -7,6 +7,7 @@
 import { signal } from '@preact/signals-core'
 import type { CaldavClient } from '../lib/caldav/client'
 import type { Vcard } from '../lib/vcard/types'
+import { parseVcf } from '../lib/vcard/parse'
 import { serializeVcard } from '../lib/vcard/serialize'
 import { clientForCollection, httpStatus, requestSync } from '../lib/sync/engine'
 import { newUid } from '../lib/util/id'
@@ -146,20 +147,53 @@ function setEntry(href: string, rec: ContactRecord): void {
   contacts.value = next
 }
 
+/** Optimistic PUT of `patch` over `base`; resolves with the server's new etag. */
+async function putPatched(client: CaldavClient, base: ContactRecord, patch: ContactPatch): Promise<string> {
+  const nextData: Vcard = { ...base.data, ...patch, rev: new Date().toISOString() }
+  setEntry(base.href, { ...base, data: nextData })
+  return client.putObject(base.href, serializeVcard(nextData), base.etag)
+}
+
 export async function updateContact(record: ContactRecord, patch: ContactPatch): Promise<void> {
   const client = requireClient(record.href)
-  const nextData: Vcard = { ...record.data, ...patch, rev: new Date().toISOString() }
   const before = contacts.value
-  setEntry(record.href, { ...record, data: nextData })
   try {
-    const etag = await client.putObject(record.href, serializeVcard(nextData), record.etag)
+    const etag = await putPatched(client, record, patch)
     retag(record.href, etag)
     void requestSync(hrefOfCollection(record.href))
+    return
   } catch (err) {
     rollbackTo(before)
-    if (httpStatus(err) === 412) void requestSync(hrefOfCollection(record.href))
-    push('error', failureMessage(err, 'save the contact'))
-    throw err
+    if (httpStatus(err) !== 412) {
+      push('error', failureMessage(err, 'save the contact'))
+      throw err
+    }
+  }
+
+  // If-Match 412: the card changed on the server under a stale etag. Refresh
+  // it (re-read by href — the debounced sync is already requested) and retry
+  // the patch ONCE on the fresh etag: the patch is the editor's typed form,
+  // so only the untouched base is refreshed, never the user's edits. A second
+  // conflict (another change mid-flight) surfaces a toast instead of looping.
+  void requestSync(hrefOfCollection(record.href))
+  try {
+    const [obj] = await client.getObjects([record.href])
+    const fresh = obj !== undefined && obj.etag !== '' ? parseVcf(obj.data)[0] : undefined
+    if (obj === undefined || fresh === undefined) {
+      throw new Error(`wycal: contact ${record.href} is no longer readable`)
+    }
+    const etag = await putPatched(client, { href: record.href, etag: obj.etag, data: fresh }, patch)
+    retag(record.href, etag)
+    void requestSync(hrefOfCollection(record.href))
+  } catch (retryErr) {
+    rollbackTo(before)
+    push(
+      'error',
+      httpStatus(retryErr) === 412
+        ? 'This contact changed on the server again — please try saving once more'
+        : failureMessage(retryErr, 'save the contact'),
+    )
+    throw retryErr
   }
 }
 
@@ -187,7 +221,7 @@ function hrefOfCollection(href: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Offline snapshot (CONTRACTS §36 mobile boot)
+// Offline snapshot (CONTRACTS §36 offline boot)
 // ---------------------------------------------------------------------------
 
 function isContactRecord(v: unknown): v is ContactRecord {
