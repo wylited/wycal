@@ -37,7 +37,6 @@ stdenv.mkDerivation (finalAttrs: {
   meta = {
     description = "Fast, pretty CalDAV + CardDAV web client for Radicale";
     homepage = "https://github.com/wylited/wycal";
-    license = lib.licenses.mit;
     platforms = lib.platforms.unix;
   };
 })
